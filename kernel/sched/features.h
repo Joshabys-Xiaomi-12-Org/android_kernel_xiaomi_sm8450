@@ -4,7 +4,7 @@
  * preserves the full fairness lag across sleep, not just 50%.
  * Kept false; no code reads it when EEVDF is active.
  */
-#define SCHED_FEAT_GENTLE_FAIR_SLEEPERS 1
+#define SCHED_FEAT_GENTLE_FAIR_SLEEPERS 0
 
 /*
  * Legacy CFS initial placement debit — superseded by EEVDF's
