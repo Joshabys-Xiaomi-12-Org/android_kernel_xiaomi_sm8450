@@ -8,6 +8,7 @@
  */
 #define INSTANTIATE_EXPORTED_MIGRATE_DISABLE
 #include <linux/sched.h>
+#include <linux/lrng.h>
 #include <linux/highmem.h>
 #include <linux/hrtimer_api.h>
 #include <linux/ktime_api.h>
@@ -2634,6 +2635,8 @@ static void
 ttwu_stat(struct task_struct *p, int cpu, int wake_flags)
 {
 	struct rq *rq;
+
+	add_sched_randomness(p, cpu);
 
 	if (!schedstat_enabled())
 		return;
