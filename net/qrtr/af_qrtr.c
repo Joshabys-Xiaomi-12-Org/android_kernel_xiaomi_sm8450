@@ -551,7 +551,7 @@ static int qrtr_tx_wait(struct qrtr_node *node, struct sockaddr_qrtr *to,
 	timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
 
 	mutex_lock(&node->qrtr_tx_lock);
-	flow = xa_load(&node->qrtr_tx_flow, key);
+	flow = radix_tree_lookup(&node->qrtr_tx_flow, key);
 	if (!flow) {
 		flow = kzalloc(sizeof(*flow), GFP_KERNEL);
 		if (flow) {
@@ -1014,7 +1014,6 @@ EXPORT_SYMBOL_GPL(qrtr_endpoint_post);
 /**
  * qrtr_alloc_ctrl_packet() - allocate control packet skb
  * @pkt: reference to qrtr_ctrl_pkt pointer
- * @flags: the type of memory to allocate
  *
  * Returns newly allocated sk_buff, or NULL on failure
  *
