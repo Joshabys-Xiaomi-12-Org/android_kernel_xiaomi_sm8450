@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 5
 PATCHLEVEL = 10
-SUBLEVEL = 256
-EXTRAVERSION =-PhoenyxCore.LTO.v1
+SUBLEVEL = 257
+EXTRAVERSION =-PhoenyxCore.LTO.v2
 NAME = Dare mighty things
 
 # indicate that change "Kbuild: Support nested composite objects" is
