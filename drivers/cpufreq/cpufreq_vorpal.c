@@ -144,8 +144,8 @@ extern bool rfx_dl_bw_exceeded_gki510(int cpu, unsigned long bwmin);
  */
 #define RFX_D_LITTLE_CAP_PCT		65	/* battery: cap LITTLE (was 55) */
 #define RFX_D_LITTLE_BOOST_CAP_PCT	90	/* relax cap while UI active */
-#define RFX_D_LITTLE_UI_FLOOR_PCT	58	/* LITTLE floor while UI active */
-#define RFX_D_BIG_UI_FLOOR_PCT		55	/* Big floor while UI active */
+#define RFX_D_LITTLE_UI_FLOOR_PCT	42	/* was 58: too hot for light scroll (manga/reader apps) */
+#define RFX_D_BIG_UI_FLOOR_PCT		38	/* was 55: same reason, still enough for smooth fling */
 
 /*
  * Daily UI ramp-assist. PELT/WALT util lags the real frame work, and the most
@@ -157,8 +157,8 @@ extern bool rfx_dl_bw_exceeded_gki510(int cpu, unsigned long bwmin);
  * first frames of a burst immediately, independent of input - the core fix for
  * the gaming_mode=0 display/UI stutter.
  */
-#define RFX_D_RAMP_DELTA_PCT		12
-#define RFX_D_UI_BOOST_NS		(150 * NSEC_PER_MSEC)
+#define RFX_D_RAMP_DELTA_PCT		18	/* was 12: filter out gentle page-decode bumps */
+#define RFX_D_UI_BOOST_NS		(90 * NSEC_PER_MSEC)	/* was 150: release floor faster between swipes */
 
 /*
  * Touch window, lengthened 90 -> 220 ms so a tap-initiated app open/close
