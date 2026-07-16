@@ -2,7 +2,7 @@
 VERSION = 5
 PATCHLEVEL = 10
 SUBLEVEL = 260
-EXTRAVERSION =-PhoenyxCore.LTO.v2
+EXTRAVERSION =-PhoenyxCore.LTO.v3
 NAME = Dare mighty things
 
 # indicate that change "Kbuild: Support nested composite objects" is
@@ -2127,5 +2127,5 @@ FORCE:
 # information in a variable so we can use it in if_changed and friends.
 .PHONY: $(PHONY)
 
-KBUILD_CFLAGS += -march=armv9-a+crypto+nosve+dotprod -mcpu=cortex-a510 -mtune=cortex-a510
-KBUILD_AFLAGS += -march=armv9-a+crypto+nosve+dotprod -mcpu=cortex-a510 -mtune=cortex-a510
+KBUILD_CFLAGS += -march=armv9-a+crypto+nosve+dotprod -mcpu=cortex-a510
+KBUILD_AFLAGS += -march=armv9-a+crypto+nosve+dotprod -mcpu=cortex-a510
