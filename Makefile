@@ -2,7 +2,7 @@
 VERSION = 5
 PATCHLEVEL = 10
 SUBLEVEL = 256
-EXTRAVERSION =-PhoenyxCore.LTO.v2
+EXTRAVERSION =-PhoenyxCore.LTO.v3
 NAME = Dare mighty things
 
 # indicate that change "Kbuild: Support nested composite objects" is
