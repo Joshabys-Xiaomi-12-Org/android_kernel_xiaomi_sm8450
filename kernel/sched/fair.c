@@ -200,21 +200,12 @@ const_debug unsigned int sysctl_sched_migration_cost    = 250000UL;
  */
 u8   __read_mostly sched_bore                   = 1;
 u8   __read_mostly sched_burst_exclude_kthreads = 1;
-<<<<<<< HEAD
-u8   __read_mostly sched_burst_smoothness_long  = 2;
-u8   __read_mostly sched_burst_smoothness_short = 1;
-u8   __read_mostly sched_burst_fork_atavistic   = 0;
-u8   __read_mostly sched_burst_penalty_offset   = 22;
-uint __read_mostly sched_burst_penalty_scale    = 550;
-uint __read_mostly sched_burst_cache_lifetime   = 12000000;
-=======
 u8   __read_mostly sched_burst_smoothness_long  = 1;
 u8   __read_mostly sched_burst_smoothness_short = 0;
 u8   __read_mostly sched_burst_fork_atavistic   = 0;
 u8   __read_mostly sched_burst_penalty_offset   = 27;
 uint __read_mostly sched_burst_penalty_scale    = 1024;
 uint __read_mostly sched_burst_cache_lifetime   = 75000000;
->>>>>>> 0529bb1a11e6 (sched/fair: BORE 6.6.3 tuning and preemption unification)
 #endif // CONFIG_SCHED_BORE
 
 int sched_thermal_decay_shift = 4;
