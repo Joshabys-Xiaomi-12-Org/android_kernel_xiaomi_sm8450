@@ -123,7 +123,7 @@ static unsigned int sched_nr_latency = 8;
  * After fork, child runs first. If set to 0 (default) then
  * parent will (try to) run first.
  */
-unsigned int sysctl_sched_child_runs_first __read_mostly = 1;
+unsigned int sysctl_sched_child_runs_first __read_mostly;
 
 /*
  * SCHED_OTHER wake-up granularity.
@@ -146,7 +146,7 @@ unsigned int sysctl_sched_child_runs_first __read_mostly = 1;
 unsigned int sysctl_sched_wakeup_granularity			= 2000000ULL;
 static unsigned int normalized_sysctl_sched_wakeup_granularity	= 2000000ULL;
 
-const_debug unsigned int sysctl_sched_migration_cost    = 250000UL;
+const_debug unsigned int sysctl_sched_migration_cost	= 250000UL;
 
 #ifdef CONFIG_SCHED_BORE
 /*
@@ -353,25 +353,22 @@ static void __update_inv_weight(struct load_weight *lw)
 static u64 __calc_delta(u64 delta_exec, unsigned long weight, struct load_weight *lw)
 {
 	u64 fact = scale_load_down(weight);
-	u32 fact_hi = (u32)(fact >> 32);
 	int shift = WMULT_SHIFT;
-	int fs;
 
 	__update_inv_weight(lw);
 
-	if (unlikely(fact_hi)) {
-		fs = fls(fact_hi);
-		shift -= fs;
-		fact >>= fs;
+	if (unlikely(fact >> 32)) {
+		while (fact >> 32) {
+			fact >>= 1;
+			shift--;
+		}
 	}
 
 	fact = mul_u32_u32(fact, lw->inv_weight);
 
-	fact_hi = (u32)(fact >> 32);
-	if (fact_hi) {
-		fs = fls(fact_hi);
-		shift -= fs;
-		fact >>= fs;
+	while (fact >> 32) {
+		fact >>= 1;
+		shift--;
 	}
 
 	return mul_u64_u32_shr(delta_exec, fact, shift);
@@ -9646,7 +9643,7 @@ static inline void update_sg_wakeup_stats(struct sched_domain *sd,
 	if (sd->flags & SD_ASYM_CPUCAPACITY)
 		sgs->group_misfit_task_load = 1;
 
-	for_each_cpu(i, sched_group_span(group)) {
+	for_each_cpu_and(i, sched_group_span(group), p->cpus_ptr) {
 		struct rq *rq = cpu_rq(i);
 		unsigned int local;
 
