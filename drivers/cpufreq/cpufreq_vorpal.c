@@ -27,7 +27,6 @@
 #include <linux/cpufreq.h>
 #include <linux/cpumask.h>
 #include <linux/irq_work.h>
-#include <linux/input.h>
 #include <linux/percpu.h>
 #include <linux/spinlock.h>
 #include <linux/mutex.h>
@@ -73,16 +72,6 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
 
 /* Gaming eval rate. Measured-stable; do not raise without an FPS measurement. */
 #define RFX_FAST_RATE_US		250
-
-/* Daily interaction eval rate: armed by every input event for the window
- * below. Keyed off a 3-tier Prime, which only carries daily spill. */
-#define RFX_UI_RATE_US			1500
-#define RFX_INPUT_WINDOW_NS		(230 * NSEC_PER_MSEC)
-
-/* Interaction-rate demand gate: fast evals are armed by touch but only spent
- * where filtered demand says something is moving. Enter/exit hysteresis. */
-#define RFX_UI_GATE_PCT			35
-#define RFX_UI_GATE_EXIT_PCT		25
 
 /* Gaming down-rate gate. NOT rate-neutral -- only ever shorten it: the slew
  * window resets on a commit in either direction, this gate only on a downward
@@ -298,7 +287,6 @@ struct rfx_policy {
 	 * depend on which CPU ticked last (frequency jitter, micro-stutter).
 	 */
 	unsigned long filt_util;
-	bool ui_fast;			/* interaction-rate demand latch */
 	u64 last_ema_ns;			/* timestamp of last EMA update */
 
 	bool floor_gated;		/* gaming: floor released to idle, hysteretic */
@@ -916,31 +904,13 @@ static inline void rfx_pol_up_delay(struct rfx_policy *p, bool gaming)
 			(s64)p->tunables->up_rate_limit_us * NSEC_PER_USEC;
 }
 
-/* sched_clock domain: @time in the util hook is rq_clock, so the input stamp
- * must come from sched_clock() too -- a MONOTONIC stamp makes (time - ts)
- * meaningless and the window can silently never open. */
-static atomic64_t rfx_input_ts_ns = ATOMIC64_INIT(0);
-
-static inline bool rfx_input_active(u64 time)
-{
-	u64 ts = (u64)atomic64_read(&rfx_input_ts_ns);
-
-	return ts && (time - ts) < RFX_INPUT_WINDOW_NS;
-}
-
 /* Eval delay for this update. Set BEFORE rfx_should_update_freq, so it may only
- * depend on state known without util. The interaction rate is keyed on the
- * role, not the tier: on a 2-tier part the top cluster keeps it too. */
-static inline void rfx_set_eval_delay(struct rfx_policy *p, bool gaming,
-				      u64 time)
+ * depend on state known without util. */
+static inline void rfx_set_eval_delay(struct rfx_policy *p, bool gaming)
 {
-	if (gaming)
-		p->freq_update_delay_ns = (s64)RFX_FAST_RATE_US * NSEC_PER_USEC;
-	else if (!p->is_prime && p->ui_fast && rfx_input_active(time))
-		p->freq_update_delay_ns = (s64)RFX_UI_RATE_US * NSEC_PER_USEC;
-	else
-		p->freq_update_delay_ns =
-			(s64)p->tunables->rate_limit_us * NSEC_PER_USEC;
+	p->freq_update_delay_ns = gaming ?
+		(s64)RFX_FAST_RATE_US * NSEC_PER_USEC :
+		(s64)p->tunables->rate_limit_us * NSEC_PER_USEC;
 }
 
 /*
@@ -1037,15 +1007,6 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 	p->filt_util = rfx_ema(p->filt_util, max_util, time, &p->last_ema_ns,
 			       gaming);
 
-	/* Value-latch for the interaction rate: touch arms the window, demand
-	 * decides whether it is spent. Lags one eval -- fine for a latch. */
-	if (!p->ui_fast &&
-	    p->filt_util * 100 >= (unsigned long)RFX_UI_GATE_PCT * max_cap)
-		p->ui_fast = true;
-	else if (p->ui_fast &&
-		 p->filt_util * 100 < (unsigned long)RFX_UI_GATE_EXIT_PCT * max_cap)
-		p->ui_fast = false;
-
 	rfx_set_down_delay(p, gaming);
 	rfx_pol_up_delay(p, gaming);
 
@@ -1072,7 +1033,7 @@ static void rfx_update(struct update_util_data *hook, u64 time,
 	rfx_iowait_boost(rfx_c, time, flags);
 	rfx_c->last_update = time;
 	rfx_ignore_dl_rate_limit(rfx_c);
-	rfx_set_eval_delay(p, gaming, time);
+	rfx_set_eval_delay(p, gaming);
 
 	if (rfx_should_update_freq(p, time)) {
 		p->last_eval_time = time;
@@ -1819,81 +1780,6 @@ static void __init rfx_selfcheck(void)
 		p.warmup_ramp_last_ns != t);
 }
 
-/* ===================================================================== */
-/* Input handler (daily touch window; inert while gaming)                */
-/* ===================================================================== */
-
-static void rfx_input_event(struct input_handle *handle, unsigned int type,
-			    unsigned int code, int value)
-{
-	if (rfx_gaming_enabled())
-		return;
-	if (type == EV_ABS || type == EV_KEY)
-		atomic64_set(&rfx_input_ts_ns, sched_clock());
-}
-
-static int rfx_input_connect(struct input_handler *handler,
-			     struct input_dev *dev,
-			     const struct input_device_id *id)
-{
-	struct input_handle *handle;
-	int err;
-
-	handle = kzalloc(sizeof(*handle), GFP_KERNEL);
-	if (!handle)
-		return -ENOMEM;
-
-	handle->dev = dev;
-	handle->handler = handler;
-	handle->name = "vorpal";
-
-	err = input_register_handle(handle);
-	if (err)
-		goto err_free;
-	err = input_open_device(handle);
-	if (err)
-		goto err_unregister;
-	return 0;
-
-err_unregister:
-	input_unregister_handle(handle);
-err_free:
-	kfree(handle);
-	return err;
-}
-
-static void rfx_input_disconnect(struct input_handle *handle)
-{
-	input_close_device(handle);
-	input_unregister_handle(handle);
-	kfree(handle);
-}
-
-static const struct input_device_id rfx_input_ids[] = {
-	{
-		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
-			 INPUT_DEVICE_ID_MATCH_ABSBIT,
-		.evbit = { BIT_MASK(EV_ABS) },
-		.absbit = { [BIT_WORD(ABS_MT_POSITION_X)] =
-			    BIT_MASK(ABS_MT_POSITION_X) },
-	},
-	{
-		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
-			 INPUT_DEVICE_ID_MATCH_KEYBIT,
-		.evbit = { BIT_MASK(EV_KEY) },
-		.keybit = { [BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH) },
-	},
-	{ },
-};
-
-static struct input_handler rfx_input_handler = {
-	.event		= rfx_input_event,
-	.connect	= rfx_input_connect,
-	.disconnect	= rfx_input_disconnect,
-	.name		= "vorpal",
-	.id_table	= rfx_input_ids,
-};
-
 static int __init vorpal_gov_init(void)
 {
 	int ret;
@@ -1906,7 +1792,6 @@ static int __init vorpal_gov_init(void)
 	BUILD_BUG_ON(RFX_G_COOL_ENTER_PCT >= RFX_G_COOL_EXIT_PCT);
 	BUILD_BUG_ON(RFX_D_LITTLE_DROP_PCT >= RFX_D_LITTLE_LIFT_PCT);
 	BUILD_BUG_ON(RFX_D_BIG_DROP_PCT >= RFX_D_BIG_LIFT_PCT);
-	BUILD_BUG_ON(RFX_UI_GATE_EXIT_PCT >= RFX_UI_GATE_PCT);
 	BUILD_BUG_ON(RFX_TEMP_EMERGENCY_CLEAR_MC >= RFX_TEMP_EMERGENCY_MC);
 	BUILD_BUG_ON(RFX_G_PRIME_FLOOR_PCT > RFX_G_WARMUP_FLOOR_PCT);
 	BUILD_BUG_ON(RFX_G_BIG_FLOOR_PCT > RFX_G_WARMUP_FLOOR_PCT);
@@ -1939,21 +1824,15 @@ static int __init vorpal_gov_init(void)
 	queue_delayed_work(system_power_efficient_wq, &rfx_thermal_work,
 			   msecs_to_jiffies(RFX_THERMAL_POLL_IDLE_MS));
 
-	if (input_register_handler(&rfx_input_handler))
-		pr_warn("vorpal: input handler register failed (touch window off)\n");
-
 	ret = cpufreq_register_governor(&vorpal_gov);
-	if (ret) {
-		input_unregister_handler(&rfx_input_handler);
+	if (ret)
 		cancel_delayed_work_sync(&rfx_thermal_work);
-	}
 	return ret;
 }
 
 static void __exit vorpal_gov_exit(void)
 {
 	cpufreq_unregister_governor(&vorpal_gov);
-	input_unregister_handler(&rfx_input_handler);
 	cancel_delayed_work_sync(&rfx_thermal_work);
 }
 
