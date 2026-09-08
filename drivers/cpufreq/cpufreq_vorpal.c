@@ -135,9 +135,12 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
 #define RFX_EMA_MAX_STEPS		32	/* cap: 8ms, one frame gap */
 
 /* ---- Headroom above demand, percent. Stacks on the 25% DVFS margin already
- * applied by rfx_get_util_gki510, so this only raises the resting OPP. ---- */
-#define RFX_HEADROOM_DAILY_HIGH		4
-#define RFX_HEADROOM_DAILY_MID		2
+ * applied by rfx_get_util_gki510, so this only raises the resting OPP. Trimmed
+ * to 2/1: the util getter's margin already covers OPP granularity, so the old
+ * 4/2 only added a resting bin for no measured latency gain. Rise is unaffected
+ * (up-rate 0 on Big/Prime), so this is pure daily resting-voltage saving. ---- */
+#define RFX_HEADROOM_DAILY_HIGH		2
+#define RFX_HEADROOM_DAILY_MID		1
 /* Gaming headroom, phased in linearly from the GATE: below it the resting OPP
  * is untouched, above it a frame is near budget and this closes the gap. Flat
  * at every level was resting-power cost; zero at every level cost the frame. */
