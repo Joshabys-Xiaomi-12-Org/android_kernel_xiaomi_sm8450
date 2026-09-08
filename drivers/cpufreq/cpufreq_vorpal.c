@@ -79,6 +79,11 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
 #define RFX_UI_RATE_US			1500
 #define RFX_INPUT_WINDOW_NS		(230 * NSEC_PER_MSEC)
 
+/* Interaction-rate demand gate: fast evals are armed by touch but only spent
+ * where filtered demand says something is moving. Enter/exit hysteresis. */
+#define RFX_UI_GATE_PCT			35
+#define RFX_UI_GATE_EXIT_PCT		25
+
 /* Gaming down-rate gate. NOT rate-neutral -- only ever shorten it: the slew
  * window resets on a commit in either direction, this gate only on a downward
  * one, so widening it ratchets the clock up. */
@@ -293,6 +298,7 @@ struct rfx_policy {
 	 * depend on which CPU ticked last (frequency jitter, micro-stutter).
 	 */
 	unsigned long filt_util;
+	bool ui_fast;			/* interaction-rate demand latch */
 	u64 last_ema_ns;			/* timestamp of last EMA update */
 
 	bool floor_gated;		/* gaming: floor released to idle, hysteretic */
@@ -930,7 +936,7 @@ static inline void rfx_set_eval_delay(struct rfx_policy *p, bool gaming,
 {
 	if (gaming)
 		p->freq_update_delay_ns = (s64)RFX_FAST_RATE_US * NSEC_PER_USEC;
-	else if (!p->is_prime && rfx_input_active(time))
+	else if (!p->is_prime && p->ui_fast && rfx_input_active(time))
 		p->freq_update_delay_ns = (s64)RFX_UI_RATE_US * NSEC_PER_USEC;
 	else
 		p->freq_update_delay_ns =
@@ -1030,6 +1036,15 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 
 	p->filt_util = rfx_ema(p->filt_util, max_util, time, &p->last_ema_ns,
 			       gaming);
+
+	/* Value-latch for the interaction rate: touch arms the window, demand
+	 * decides whether it is spent. Lags one eval -- fine for a latch. */
+	if (!p->ui_fast &&
+	    p->filt_util * 100 >= (unsigned long)RFX_UI_GATE_PCT * max_cap)
+		p->ui_fast = true;
+	else if (p->ui_fast &&
+		 p->filt_util * 100 < (unsigned long)RFX_UI_GATE_EXIT_PCT * max_cap)
+		p->ui_fast = false;
 
 	rfx_set_down_delay(p, gaming);
 	rfx_pol_up_delay(p, gaming);
@@ -1891,6 +1906,7 @@ static int __init vorpal_gov_init(void)
 	BUILD_BUG_ON(RFX_G_COOL_ENTER_PCT >= RFX_G_COOL_EXIT_PCT);
 	BUILD_BUG_ON(RFX_D_LITTLE_DROP_PCT >= RFX_D_LITTLE_LIFT_PCT);
 	BUILD_BUG_ON(RFX_D_BIG_DROP_PCT >= RFX_D_BIG_LIFT_PCT);
+	BUILD_BUG_ON(RFX_UI_GATE_EXIT_PCT >= RFX_UI_GATE_PCT);
 	BUILD_BUG_ON(RFX_TEMP_EMERGENCY_CLEAR_MC >= RFX_TEMP_EMERGENCY_MC);
 	BUILD_BUG_ON(RFX_G_PRIME_FLOOR_PCT > RFX_G_WARMUP_FLOOR_PCT);
 	BUILD_BUG_ON(RFX_G_BIG_FLOOR_PCT > RFX_G_WARMUP_FLOOR_PCT);
