@@ -88,7 +88,7 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
  * tier), so its floor is pure resting power — the heat that pushes the
  * die over the limiter's step threshold and starts the spike cycle:
  * burst chase -> power spike -> limiter step -> cpu sag -> gpu sag. */
-#define RFX_G_PRIME_FLOOR_PCT		58
+#define RFX_G_PRIME_FLOOR_PCT		52
 #define RFX_G_BIG_FLOOR_PCT		58
 /* Warmup floor, both render tiers: spawn/asset load only, never steady state. */
 #define RFX_G_WARMUP_FLOOR_PCT		80
@@ -118,12 +118,14 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
 #define RFX_D_PRIME_CAP_PCT		68
 /* The 70/68 base cap clips once demand clears ~70% (real util ~55%), but the
  * lift used to wait for demand 85 (~68% real): transition bursts riding 70-85
- * stayed pinned below their need and dropped a frame. Trip the 80% sustained
- * ceiling at the clip edge; release back into idle below it. */
+ * stayed pinned below their need and dropped a frame. Trip the sustained
+ * ceiling at the clip edge; release back into idle below it. A saturated
+ * launch burst then rides 90% of fceil instead of 80%; the latch is value-only,
+ * so idle and light load never leave the 70/68 base cap. */
 #define RFX_D_BIG_LIFT_PCT		78
 #define RFX_D_BIG_DROP_PCT		64
-#define RFX_D_BIG_SUSTAINED_CAP_PCT	80
-#define RFX_D_PRIME_SUSTAINED_CAP_PCT	80
+#define RFX_D_BIG_SUSTAINED_CAP_PCT	90
+#define RFX_D_PRIME_SUSTAINED_CAP_PCT	90
 
 /* ---- Util EMA: rise instant, decay time-normalised, so the time constant is
  * independent of eval rate. Period = interval removing 1/DIVISOR of the
