@@ -519,25 +519,17 @@ static unsigned int ssg_tgroup_shallow_depth(struct blk_mq_alloc_data *data)
 	int nr_requests = data->q->nr_requests;
 	int tgroup_rqs = 0;
 	int i;
-	int checked = 0;
-	int limit;
 
 	if (unlikely(!ssg->rq_info))
 		return 0;
 
-	limit = min_t(int, nr_requests, TGROUP_SCAN_LIMIT);
-	
-	for (i = nr_requests - 1; i >= 0 && checked < limit; i--) {
-		if (ssg->rq_info[i].tgid == 0)
-			continue;
-		
-		if (tgid == ssg->rq_info[i].tgid) {
+	if (!tgid)
+		return 0;
+
+	/* ponytail: O(n) scan on every congested allocation, per-tgid counter would be faster */
+	for (i = 0; i < nr_requests; i++)
+		if (tgid == ssg->rq_info[i].tgid)
 			tgroup_rqs++;
-			if (tgroup_rqs >= ssg->max_tgroup_rqs)
-				break;
-		}
-		checked++;
-	}
 
 	if (tgroup_rqs < ssg->max_tgroup_rqs)
 		return 0;
@@ -614,20 +606,19 @@ static int ssg_init_queue(struct request_queue *q, struct elevator_type *e)
     INIT_LIST_HEAD(&ssg->fifo_list[WRITE]);
     ssg->sort_list[READ] = RB_ROOT;
     ssg->sort_list[WRITE] = RB_ROOT;
-    ssg->fifo_expire[READ]  = msecs_to_jiffies(250);
-    ssg->fifo_expire[WRITE] = msecs_to_jiffies(3000);
-    ssg->max_write_starvation = max_write_starvation; /* 8 */
+    ssg->fifo_expire[READ]  = msecs_to_jiffies(read_expire);
+    ssg->fifo_expire[WRITE] = write_expire;
+    ssg->max_write_starvation = max_write_starvation;
     ssg->front_merges = 1;
-    blk_queue_max_hw_sectors(q, 256); /* 128KB */
+    blk_queue_max_hw_sectors(q, 128 * 8);
     q->backing_dev_info->ra_pages = 128;
-    blk_queue_rq_timeout(q, 10000);
+    blk_queue_rq_timeout(q, 5000);
 
     atomic_set(&ssg->allocated_rqs, 0);
     atomic_set(&ssg->async_write_rqs, 0);
     
     ssg->congestion_threshold_rqs = q->nr_requests * congestion_threshold / 100U;
-    ssg->max_async_write_rqs = MAX_ASYNC_WRITE_RQS; /* 2 */
-	ssg->max_tgroup_rqs = q->nr_requests * max_tgroup_io_ratio / 100U;			   
+    ssg->max_async_write_rqs = MAX_ASYNC_WRITE_RQS;
     
     ssg->rq_info = kmalloc(q->nr_requests * sizeof(struct ssg_request_info),
             GFP_KERNEL | __GFP_ZERO);
