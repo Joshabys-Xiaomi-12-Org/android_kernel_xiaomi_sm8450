@@ -113,13 +113,15 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
 #define RFX_D_LITTLE_LIFT_PCT		72
 #define RFX_D_LITTLE_DROP_PCT		55
 /* Big/Prime share one latch; a sustained cap may never exceed 100. The lift
- * threshold reads the same 1.25x-skewed demand as the gaming gates, so a
- * platform whose foreground carries a persistent uclamp.min floor must clear
- * a higher bar before the sustained cap engages. */
+ * threshold reads the same 1.25x-skewed demand as the gaming gates. */
 #define RFX_D_BIG_CAP_PCT		70
 #define RFX_D_PRIME_CAP_PCT		68
-#define RFX_D_BIG_LIFT_PCT		85
-#define RFX_D_BIG_DROP_PCT		68
+/* The 70/68 base cap clips once demand clears ~70% (real util ~55%), but the
+ * lift used to wait for demand 85 (~68% real): transition bursts riding 70-85
+ * stayed pinned below their need and dropped a frame. Trip the 80% sustained
+ * ceiling at the clip edge; release back into idle below it. */
+#define RFX_D_BIG_LIFT_PCT		78
+#define RFX_D_BIG_DROP_PCT		64
 #define RFX_D_BIG_SUSTAINED_CAP_PCT	80
 #define RFX_D_PRIME_SUSTAINED_CAP_PCT	80
 
