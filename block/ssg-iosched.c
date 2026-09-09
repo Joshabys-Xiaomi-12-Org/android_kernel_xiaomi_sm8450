@@ -39,14 +39,14 @@ extern void blk_sec_stats_account_io_done(
 #define blk_sec_stats_account_io_done(rq, size, tgid, name, time) do {} while(0)
 #endif
 
-#define MAX_ASYNC_WRITE_RQS	3
-#define TGROUP_SCAN_LIMIT	16
-static const int read_expire = 500;		/* max time before a read is submitted. */
-static const int write_expire = 3000;		/* ditto for writes, these limits are SOFT! */
-static const int max_write_starvation = 8;	/* max times reads can starve a write */
-static const int congestion_threshold = 35;	/* percentage of congestion threshold */
-static const int max_tgroup_io_ratio = 10;	/* maximum service ratio for each thread group */
-static const int max_async_write_ratio = 10;	/* maximum service ratio for async write */
+#define MAX_ASYNC_WRITE_RQS	10
+
+static const int read_expire = 600;		/* max time before a read is submitted. */
+static const int write_expire = 20 * HZ;		/* ditto for writes, these limits are SOFT! */
+static const int max_write_starvation = 2;	/* reads may run 2 ahead of a queued write */
+static const int congestion_threshold = 50;	/* percentage of congestion threshold */
+static const int max_tgroup_io_ratio = 15;	/* maximum service ratio for each thread group */
+static const int max_async_write_ratio = 8;	/* maximum service ratio for async write */
 
 struct ssg_request_info {
 	pid_t tgid;
