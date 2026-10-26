@@ -6,6 +6,12 @@
  *
  *  Copyright (C) 1991-2002  Linus Torvalds
  */
+#define INSTANTIATE_EXPORTED_MIGRATE_DISABLE
+#include <linux/sched.h>
+#include <linux/highmem.h>
+#include <linux/hrtimer_api.h>
+#include <linux/ktime_api.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 #undef CREATE_TRACE_POINTS
