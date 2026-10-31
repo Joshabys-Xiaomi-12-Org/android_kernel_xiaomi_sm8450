@@ -187,11 +187,15 @@ enum xm_property_id {
 	XM_PROP_VERIFY_DIGEST,
 	XM_PROP_CONNECTOR_TEMP,
 	XM_PROP_AUTHENTIC,
+#ifndef CONFIG_MI_CHARGER_M81_OS3_PROPS
 	XM_PROP_BATTERY_ADAPT_POWER_MATCH,
+#endif
 	XM_PROP_CHIP_OK,
 	XM_PROP_VBUS_DISABLE,
 	XM_PROP_REAL_TYPE,
+#ifndef CONFIG_MI_CHARGER_M81_OS3_PROPS
 	XM_PROP_THERMAL_BOARD_TEMP,
+#endif
 	XM_PROP_VERIFY_PROCESS,
 	XM_PROP_VDM_CMD_CHARGER_VERSION,
 	XM_PROP_VDM_CMD_CHARGER_VOLTAGE,
@@ -225,7 +229,7 @@ enum xm_property_id {
 	XM_PROP_INPUT_SUSPEND,
 	XM_PROP_FASTCHGMODE,
 	XM_PROP_NIGHT_CHARGING,
-#ifdef CONFIG_MARBLE_TOGGLE
+#if defined(CONFIG_MARBLE_TOGGLE) || defined(CONFIG_MI_CHARGER_M81_OS3_PROPS)
 	XM_PROP_BLANK_STATUS,
 	XM_PROP_SCREEN_CCTOG,
 #endif
@@ -268,7 +272,9 @@ enum xm_property_id {
 	XM_PROP_WLS_CAR_ADAPTER,
 	XM_PROP_WLS_TX_SPEED,
 	XM_PROP_WLS_FC_FLAG,
+#ifndef CONFIG_MI_CHARGER_M81_OS3_PROPS
 	XM_PROP_WLS_END,
+#endif
 	XM_PROP_SHUTDOWN_DELAY,
 	XM_PROP_FAKE_TEMP,
 	XM_PROP_THERMAL_REMOVE,
@@ -277,17 +283,23 @@ enum xm_property_id {
 	XM_PROP_THERMAL_TEMP,
 	XM_PROP_FB_BLANK_STATE,
 	XM_PROP_SMART_BATT,
+#ifndef CONFIG_MI_CHARGER_M81_OS3_PROPS
 	XM_PROP_SMART_CHG,
+#endif
 	XM_PROP_SHIPMODE_COUNT_RESET,
 	XM_PROP_SPORT_MODE,
 	XM_PROP_BATT_CONNT_ONLINE,
 	XM_PROP_FAKE_CYCLE,
 	XM_PROP_FAKE_SOH,
 	XM_PROP_DELTAFV,
+#ifdef CONFIG_MI_CHARGER_M81_OS3_PROPS
+	XM_PROP_CYCLE_COUNT_DIFF,
+#else
 	XM_PROP_OTG_UI_SUPPORT,
 	XM_PROP_CID_STATUS,
 	XM_PROP_CC_TOGGLE,
 	XM_PROP_HIFI_CONNECT,
+#endif
 	XM_PROP_NVTFG_MONITOR_ISC,
 	XM_PROP_NVTFG_MONITOR_SOA,
 	XM_PROP_OVER_PEAK_FLAG,
@@ -311,7 +323,7 @@ enum xm_property_id {
 	XM_PROP_SET_LEARNING_POWER_B,
 	XM_PROP_GET_LEARNING_POWER_B,
 	XM_PROP_GET_LEARNING_POWER_DEV_B,
-#ifdef CONFIG_MARBLE_TOGGLE_2
+#if defined(CONFIG_MARBLE_TOGGLE_2) || defined(CONFIG_MI_CHARGER_M81_OS3_PROPS)
 	XM_PROP_GET_MAX_LIFE_VOL,
 	XM_PROP_GET_MAX_LIFE_TEMP,
 	XM_PROP_GET_OVER_VOL_DURATION,
@@ -367,6 +379,7 @@ enum xm_property_id {
 	XM_PROP_FG2_GaugingStatus,
 	XM_PROP_FG2_FullChargeFlag,
 	XM_PROP_FG2_RSOC,
+#ifndef CONFIG_MI_CHARGER_M81_OS3_PROPS
 	XM_PROP_FG2_OVER_PEAK_FLAG,
 	XM_PROP_FG2_CURRENT_DEVIATION,
 	XM_PROP_FG2_POWER_DEVIATION,
@@ -388,6 +401,7 @@ enum xm_property_id {
 	XM_PROP_FG2_SET_LEARNING_POWER_B,
 	XM_PROP_FG2_GET_LEARNING_POWER_B,
 	XM_PROP_FG2_GET_LEARNING_POWER_DEV_B,
+#endif
 	XM_PROP_FG_VENDOR_ID,
 	XM_PROP_FG_VOLTAGE_MAX,
 	XM_PROP_FG_Charge_Current_MAX,
@@ -408,7 +422,42 @@ enum xm_property_id {
 	XM_PROP_SERVER_RESULT,
 	XM_PROP_ADSP_RESULT,
 #endif
+#ifdef CONFIG_MI_CHARGER_M81_OS3_PROPS
+	XM_PROP_ATEST,
+#endif
 	XM_PROP_LAST_NODE,
+#ifdef CONFIG_MI_CHARGER_M81_OS3_PROPS
+	/* Not in the M81 ADSP table: kept for the shared code, never sent to the ADSP */
+	XM_PROP_BATTERY_ADAPT_POWER_MATCH,
+	XM_PROP_THERMAL_BOARD_TEMP,
+	XM_PROP_WLS_END,
+	XM_PROP_SMART_CHG,
+	XM_PROP_OTG_UI_SUPPORT,
+	XM_PROP_CID_STATUS,
+	XM_PROP_CC_TOGGLE,
+	XM_PROP_HIFI_CONNECT,
+	XM_PROP_FG2_OVER_PEAK_FLAG,
+	XM_PROP_FG2_CURRENT_DEVIATION,
+	XM_PROP_FG2_POWER_DEVIATION,
+	XM_PROP_FG2_AVERAGE_CURRENT,
+	XM_PROP_FG2_AVERAGE_TEMPERATURE,
+	XM_PROP_FG2_START_LEARNING,
+	XM_PROP_FG2_STOP_LEARNING,
+	XM_PROP_FG2_SET_LEARNING_POWER,
+	XM_PROP_FG2_GET_LEARNING_POWER,
+	XM_PROP_FG2_GET_LEARNING_POWER_DEV,
+	XM_PROP_FG2_GET_LEARNING_TIME_DEV,
+	XM_PROP_FG2_SET_CONSTANT_POWER,
+	XM_PROP_FG2_GET_REMAINING_TIME,
+	XM_PROP_FG2_SET_REFERANCE_POWER,
+	XM_PROP_FG2_GET_REFERANCE_CURRENT,
+	XM_PROP_FG2_GET_REFERANCE_POWER,
+	XM_PROP_FG2_START_LEARNING_B,
+	XM_PROP_FG2_STOP_LEARNING_B,
+	XM_PROP_FG2_SET_LEARNING_POWER_B,
+	XM_PROP_FG2_GET_LEARNING_POWER_B,
+	XM_PROP_FG2_GET_LEARNING_POWER_DEV_B,
+#endif
 	XM_PROP_MAX,
 };
 
@@ -594,6 +643,10 @@ struct battery_chg_dev {
 	u32				thermal_fcc_ua;
 	u32				restrict_fcc_ua;
 	u32				last_fcc_ua;
+	/* constant_charge_current request (UINT_MAX: none) and its ceiling (0: none) */
+	struct mutex			fcc_lock;
+	u32				fcc_req_ua;
+	u32				fcc_max_ua;
 	u32				usb_icl_ua;
 	u32				reverse_chg_flag;
 	u32				boost_mode;
@@ -853,10 +906,23 @@ static int battery_chg_write(struct battery_chg_dev *bcdev, void *data,
 	return rc;
 }
 
+static bool xm_prop_unsupported(struct battery_chg_dev *bcdev,
+			struct psy_state *pst, u32 prop_id)
+{
+#ifdef CONFIG_MI_CHARGER_M81_OS3_PROPS
+	return pst == &bcdev->psy_list[PSY_TYPE_XM] && prop_id > XM_PROP_LAST_NODE;
+#else
+	return false;
+#endif
+}
+
 static int write_property_id(struct battery_chg_dev *bcdev,
 			struct psy_state *pst, u32 prop_id, u32 val)
 {
 	struct battery_charger_req_msg req_msg = { { 0 } };
+
+	if (xm_prop_unsupported(bcdev, pst, prop_id))
+		return -EOPNOTSUPP;
 
 	req_msg.property_id = prop_id;
 	req_msg.battery_id = 0;
@@ -872,6 +938,9 @@ static int read_property_id(struct battery_chg_dev *bcdev,
 			struct psy_state *pst, u32 prop_id)
 {
 	struct battery_charger_req_msg req_msg = { { 0 } };
+
+	if (xm_prop_unsupported(bcdev, pst, prop_id))
+		return -EOPNOTSUPP;
 
 	req_msg.property_id = prop_id;
 	req_msg.battery_id = 0;
@@ -1888,17 +1957,38 @@ static ssize_t quick_charge_type_show(struct class *c,
 }
 static CLASS_ATTR_RO(quick_charge_type);
 
-static int battery_psy_set_fcc(struct battery_chg_dev *bcdev, u32 prop_id, int val)
+/* Called with fcc_lock held */
+static int battery_psy_apply_fcc(struct battery_chg_dev *bcdev)
 {
-	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
-	u32 temp;
+	u32 fcc_ua = bcdev->fcc_req_ua;
+
+	if (bcdev->fcc_max_ua)
+		fcc_ua = min(fcc_ua, bcdev->fcc_max_ua);
+
+	return write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_BATTERY],
+				BATT_CONSTANT_CURRENT, fcc_ua);
+}
+
+static int battery_psy_set_fcc(struct battery_chg_dev *bcdev, int val)
+{
 	int rc;
 
-	temp = val;
-	if (val < 0)
-		temp = UINT_MAX;
+	mutex_lock(&bcdev->fcc_lock);
+	bcdev->fcc_req_ua = val < 0 ? UINT_MAX : val;
+	rc = battery_psy_apply_fcc(bcdev);
+	mutex_unlock(&bcdev->fcc_lock);
 
-	rc = write_property_id(bcdev, pst, prop_id, temp);
+	return rc;
+}
+
+static int battery_psy_set_fcc_max(struct battery_chg_dev *bcdev, int val)
+{
+	int rc;
+
+	mutex_lock(&bcdev->fcc_lock);
+	bcdev->fcc_max_ua = val > 0 ? val : 0;
+	rc = battery_psy_apply_fcc(bcdev);
+	mutex_unlock(&bcdev->fcc_lock);
 
 	return rc;
 }
@@ -2072,6 +2162,12 @@ static int battery_psy_get_prop(struct power_supply *psy,
 	if (prop == POWER_SUPPLY_PROP_TIME_TO_FULL_NOW)
 		prop = POWER_SUPPLY_PROP_TIME_TO_FULL_AVG;
 
+	/* Kept in the kernel, the ADSP has no such property */
+	if (prop == POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX) {
+		pval->intval = bcdev->fcc_max_ua;
+		return 0;
+	}
+
 	prop_id = get_property_id(pst, prop);
 	if (prop_id < 0)
 		return prop_id;
@@ -2138,23 +2234,23 @@ static int battery_psy_set_prop(struct power_supply *psy,
 {
 	struct battery_chg_dev *bcdev = power_supply_get_drvdata(psy);
         struct psy_state *pst =&bcdev->psy_list[PSY_TYPE_BATTERY];
-        int prop_id, rc = 0;
+        int prop_id;
+
+	if (prop == POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX)
+		return battery_psy_set_fcc_max(bcdev, pval->intval);
 
         prop_id = get_property_id(pst, prop);
         if (prop_id < 0)
             return prop_id;
-  
+
 	switch (prop) {
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
 		return battery_psy_set_charge_current(bcdev, pval->intval);
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT:
-		rc = battery_psy_set_fcc(bcdev, prop_id, pval->intval);
-		break;
+		return battery_psy_set_fcc(bcdev, pval->intval);
 	default:
 		return -EINVAL;
 	}
-
-	return 0;
 }
 
 static int battery_psy_prop_is_writeable(struct power_supply *psy,
@@ -2163,6 +2259,7 @@ static int battery_psy_prop_is_writeable(struct power_supply *psy,
 	switch (prop) {
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT:
+	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
 		return 1;
 	default:
 		break;
@@ -2184,6 +2281,7 @@ static enum power_supply_property battery_props[] = {
 	POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT,
 	POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT_MAX,
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT,
+	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_CHARGE_COUNTER,
@@ -2311,6 +2409,11 @@ static void battery_chg_subsys_up_work(struct work_struct *work)
 		rc = __battery_psy_set_charge_current(bcdev,
 				bcdev->last_fcc_ua);
 	}
+
+	mutex_lock(&bcdev->fcc_lock);
+	if (bcdev->fcc_req_ua != UINT_MAX || bcdev->fcc_max_ua)
+		rc = battery_psy_apply_fcc(bcdev);
+	mutex_unlock(&bcdev->fcc_lock);
 
 	if (bcdev->usb_icl_ua) {
 		rc = usb_psy_set_icl(bcdev, USB_INPUT_CURR_LIMIT,
@@ -8257,6 +8360,8 @@ static int battery_chg_probe(struct platform_device *pdev)
 		devm_kzalloc(&pdev->dev, MAX_STR_LEN, GFP_KERNEL);
 
 	mutex_init(&bcdev->rw_lock);
+	mutex_init(&bcdev->fcc_lock);
+	bcdev->fcc_req_ua = UINT_MAX;
 	init_rwsem(&bcdev->state_sem);
 	init_completion(&bcdev->ack);
 	init_completion(&bcdev->fw_buf_ack);

@@ -2168,3 +2168,6 @@ ifdef CONFIG_LD_DEAD_CODE_DATA_ELIMINATION
 POLLY_FLAGS	+= -mllvm -polly-run-dce
 endif
 endif
+KBUILD_CFLAGS += -Wuninitialized
+KBUILD_CFLAGS += -Wno-sometimes-uninitialized
+KBUILD_CFLAGS += -Wuninitialized

@@ -901,7 +901,7 @@ int i3c_master_defslvs_locked(struct i3c_master_controller *master)
 	struct i3c_ccc_dev_desc *desc;
 	struct i3c_ccc_cmd_dest dest;
 	struct i3c_dev_desc *i3cdev;
-	struct i2c_dev_desc *i2cdev;
+	struct i2c_dev_desc *i2cdev = NULL;
 	struct i3c_ccc_cmd cmd;
 	struct i3c_bus *bus;
 	bool send = false;
@@ -1676,7 +1676,7 @@ static int i3c_master_bus_init(struct i3c_master_controller *master)
 	enum i3c_addr_slot_status status;
 	struct i2c_dev_boardinfo *i2cboardinfo;
 	struct i3c_dev_boardinfo *i3cboardinfo;
-	struct i2c_dev_desc *i2cdev;
+	struct i2c_dev_desc *i2cdev = NULL;
 	int ret;
 
 	/*
@@ -2189,7 +2189,7 @@ static const struct i2c_algorithm i3c_master_i2c_algo = {
 static int i3c_master_i2c_adapter_init(struct i3c_master_controller *master)
 {
 	struct i2c_adapter *adap = i3c_master_to_i2c_adapter(master);
-	struct i2c_dev_desc *i2cdev;
+	struct i2c_dev_desc *i2cdev = NULL;
 	int ret;
 
 	adap->dev.parent = master->dev.parent;
@@ -2217,7 +2217,7 @@ static int i3c_master_i2c_adapter_init(struct i3c_master_controller *master)
 
 static void i3c_master_i2c_adapter_cleanup(struct i3c_master_controller *master)
 {
-	struct i2c_dev_desc *i2cdev;
+	struct i2c_dev_desc *i2cdev = NULL;
 
 	i2c_del_adapter(&master->i2c);
 
