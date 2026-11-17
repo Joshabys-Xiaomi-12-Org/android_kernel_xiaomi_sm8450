@@ -111,9 +111,9 @@ unsigned int sysctl_sched_min_base_slice       = CONFIG_MIN_BASE_SLICE_NS;
 __read_mostly uint sysctl_sched_base_slice     = nsecs_per_tick;
 #else // !CONFIG_SCHED_BORE
 unsigned int sysctl_sched_base_slice			= 700000ULL;
-EXPORT_SYMBOL_GPL(sysctl_sched_base_slice);
 static unsigned int normalized_sysctl_sched_base_slice	= 700000ULL;
 #endif // CONFIG_SCHED_BORE
+EXPORT_SYMBOL_GPL(sysctl_sched_base_slice);
 
 /*
  * After fork, child runs first. If set to 0 (default) then
