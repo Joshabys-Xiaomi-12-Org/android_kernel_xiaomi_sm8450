@@ -74,7 +74,8 @@ static int gc_thread_func(void *data)
 		if (kthread_should_stop())
 			break;
 
-		if (sbi->sb->s_writers.frozen >= SB_FREEZE_WRITE) {
+		if (sbi->sb->s_writers.frozen >= SB_FREEZE_WRITE ||
+			f2fs_is_suspending(sbi)) {
 			increase_sleep_time(gc_th, &wait_ms);
 			stat_other_skip_bggc_count(sbi);
 			continue;
@@ -1069,8 +1070,9 @@ next_step:
 		struct node_info ni;
 		int err;
 
-		/* stop BG_GC if there is not enough free sections. */
-		if (gc_type == BG_GC && has_not_enough_free_secs(sbi, 0, 0))
+		/* stop BG_GC if there is not enough free sections or suspending/freezing. */
+		if (gc_type == BG_GC && (has_not_enough_free_secs(sbi, 0, 0) ||
+					f2fs_is_suspending(sbi)))
 			return submitted;
 
 		if (check_valid_map(sbi, segno, off) == 0)
@@ -1611,7 +1613,8 @@ next_step:
 		 * Or, stop GC if the segment becomes fully valid caused by
 		 * race condition along with SSR block allocation.
 		 */
-		if ((gc_type == BG_GC && has_not_enough_free_secs(sbi, 0, 0)) ||
+		if ((gc_type == BG_GC && (has_not_enough_free_secs(sbi, 0, 0) ||
+					f2fs_is_suspending(sbi))) ||
 			(!force_migrate && get_valid_blocks(sbi, segno, true) ==
 							CAP_BLKS_PER_SEC(sbi)))
 			return submitted;
@@ -1913,7 +1916,7 @@ freed:
 					segno + 1 : NULL_SEGNO;
 skip:
 		f2fs_put_page(sum_page, 0);
-		if (unlikely(freezing(current)))
+		if (f2fs_is_suspending(sbi))
 			goto stop;
 	}
 
@@ -1991,7 +1994,7 @@ gc_more:
 		goto stop;
 	}
 retry:
-	if (unlikely(freezing(current))) {
+	if (f2fs_is_suspending(sbi)) {
 		ret = 0;
 		goto stop;
 	}
