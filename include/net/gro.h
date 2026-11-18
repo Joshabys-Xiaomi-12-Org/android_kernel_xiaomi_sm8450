@@ -151,15 +151,22 @@ static inline void skb_gro_pull(struct sk_buff *skb, unsigned int len)
 	NAPI_GRO_CB(skb)->data_offset += len;
 }
 
-static inline void *skb_gro_header_fast(struct sk_buff *skb,
+static inline void *skb_gro_header_fast(const struct sk_buff *skb,
 					unsigned int offset)
 {
 	return NAPI_GRO_CB(skb)->frag0 + offset;
 }
 
-static inline int skb_gro_header_hard(struct sk_buff *skb, unsigned int hlen)
+static inline bool skb_gro_may_pull(const struct sk_buff *skb,
+				    unsigned int hlen)
 {
-	return NAPI_GRO_CB(skb)->frag0_len < hlen;
+	return likely(hlen <= NAPI_GRO_CB(skb)->frag0_len);
+}
+
+static inline int skb_gro_header_hard(const struct sk_buff *skb,
+				      unsigned int hlen)
+{
+	return !skb_gro_may_pull(skb, hlen);
 }
 
 static inline void skb_gro_frag0_invalidate(struct sk_buff *skb)
@@ -174,7 +181,8 @@ static inline void *skb_gro_header_slow(struct sk_buff *skb, unsigned int hlen,
 	if (!pskb_may_pull(skb, hlen))
 		return NULL;
 
-	skb_gro_frag0_invalidate(skb);
+	NAPI_GRO_CB(skb)->frag0 = skb->data;
+	NAPI_GRO_CB(skb)->frag0_len = skb_headlen(skb);
 	return skb->data + offset;
 }
 
@@ -184,15 +192,17 @@ static inline void *skb_gro_header(struct sk_buff *skb,
 	void *ptr;
 
 	ptr = skb_gro_header_fast(skb, offset);
-	if (skb_gro_header_hard(skb, hlen))
+	if (!skb_gro_may_pull(skb, hlen))
 		ptr = skb_gro_header_slow(skb, hlen, offset);
 	return ptr;
 }
 
-static inline void *skb_gro_network_header(struct sk_buff *skb)
+static inline void *skb_gro_network_header(const struct sk_buff *skb)
 {
-	return (NAPI_GRO_CB(skb)->frag0 ?: skb->data) +
-	       skb_network_offset(skb);
+	if (skb_gro_may_pull(skb, skb_gro_offset(skb)))
+		return skb_gro_header_fast(skb, skb_network_offset(skb));
+
+	return skb->data + skb_network_offset(skb);
 }
 
 static inline __wsum inet_gro_compute_pseudo(struct sk_buff *skb, int proto)
@@ -442,6 +452,7 @@ static inline __wsum ip6_gro_compute_pseudo(struct sk_buff *skb, int proto)
 }
 
 int skb_gro_receive(struct sk_buff *p, struct sk_buff *skb);
+int skb_gro_receive_list(struct sk_buff *p, struct sk_buff *skb);
 
 /* Pass the currently batched GRO_NORMAL SKBs up to the stack. */
 static inline void gro_normal_list(struct napi_struct *napi)
