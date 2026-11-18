@@ -216,6 +216,9 @@ SYSCALL_DEFINE6(futex, u32 __user *, uaddr, int, op, u32, val,
 /* Mask of available flags for each futex in futex_waitv list */
 #define FUTEXV_WAITER_MASK (FUTEX_32 | FUTEX_PRIVATE_FLAG)
 
+/* Maximum number of futex_waitv elements allocated on the kernel stack */
+#define FUTEX_WAITV_MAX_ONSTACK 6
+
 /**
  * futex_parse_waitv - Parse a waitv array from userspace
  * @futexv:	Kernel side list of waiters to be filled
@@ -228,23 +231,30 @@ static int futex_parse_waitv(struct futex_vector *futexv,
 			     struct futex_waitv __user *uwaitv,
 			     unsigned int nr_futexes)
 {
-	struct futex_waitv aux;
-	unsigned int i;
+	struct futex_waitv aux[FUTEX_WAITV_MAX_ONSTACK];
+	unsigned int i, chunk, offset = 0;
 
-	for (i = 0; i < nr_futexes; i++) {
-		if (copy_from_user(&aux, &uwaitv[i], sizeof(aux)))
+	while (offset < nr_futexes) {
+		chunk = min_t(unsigned int, nr_futexes - offset,
+			      FUTEX_WAITV_MAX_ONSTACK);
+		if (copy_from_user(aux, &uwaitv[offset],
+				   chunk * sizeof(*aux)))
 			return -EFAULT;
 
-		if ((aux.flags & ~FUTEXV_WAITER_MASK) || aux.__reserved)
-			return -EINVAL;
+		for (i = 0; i < chunk; i++) {
+			if ((aux[i].flags & ~FUTEXV_WAITER_MASK) ||
+			    aux[i].__reserved)
+				return -EINVAL;
 
-		if (!(aux.flags & FUTEX_32))
-			return -EINVAL;
+			if (!(aux[i].flags & FUTEX_32))
+				return -EINVAL;
 
-		futexv[i].w.flags = aux.flags;
-		futexv[i].w.val = aux.val;
-		futexv[i].w.uaddr = aux.uaddr;
-		futexv[i].q = futex_q_init;
+			futexv[offset + i].w.flags = aux[i].flags;
+			futexv[offset + i].w.val = aux[i].val;
+			futexv[offset + i].w.uaddr = aux[i].uaddr;
+			futexv[offset + i].q = futex_q_init;
+		}
+		offset += chunk;
 	}
 
 	return 0;
@@ -277,6 +287,7 @@ SYSCALL_DEFINE5(futex_waitv, struct futex_waitv __user *, waiters,
 		unsigned int, nr_futexes, unsigned int, flags,
 		struct __kernel_timespec __user *, timeout, clockid_t, clockid)
 {
+	struct futex_vector futexv_onstack[FUTEX_WAITV_MAX_ONSTACK];
 	struct hrtimer_sleeper to;
 	struct futex_vector *futexv;
 	struct timespec64 ts;
@@ -315,17 +326,23 @@ SYSCALL_DEFINE5(futex_waitv, struct futex_waitv __user *, waiters,
 		futex_setup_timer(&time, &to, flag_clkid, 0);
 	}
 
-	futexv = kcalloc(nr_futexes, sizeof(*futexv), GFP_KERNEL);
-	if (!futexv) {
-		ret = -ENOMEM;
-		goto destroy_timer;
+	if (likely(nr_futexes <= FUTEX_WAITV_MAX_ONSTACK)) {
+		memset(futexv_onstack, 0, nr_futexes * sizeof(*futexv));
+		futexv = futexv_onstack;
+	} else {
+		futexv = kcalloc(nr_futexes, sizeof(*futexv), GFP_KERNEL);
+		if (!futexv) {
+			ret = -ENOMEM;
+			goto destroy_timer;
+		}
 	}
 
 	ret = futex_parse_waitv(futexv, waiters, nr_futexes);
 	if (!ret)
 		ret = futex_wait_multiple(futexv, nr_futexes, timeout ? &to : NULL);
 
-	kfree(futexv);
+	if (unlikely(futexv != futexv_onstack))
+		kfree(futexv);
 
 destroy_timer:
 	if (timeout) {
