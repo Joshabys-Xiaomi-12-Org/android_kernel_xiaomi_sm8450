@@ -37,6 +37,7 @@
 #include <linux/seq_file.h>
 #include <linux/compat.h>
 #include <linux/rculist.h>
+#include <linux/capability.h>
 #include <net/busy_poll.h>
 
 #include <trace/hooks/fs.h>
@@ -233,6 +234,11 @@ struct eventpoll {
 #ifdef CONFIG_NET_RX_BUSY_POLL
 	/* used to track busy poll napi_id */
 	unsigned int napi_id;
+	/* busy poll timeout */
+	u32 busy_poll_usecs;
+	/* busy poll packet budget */
+	u16 busy_poll_budget;
+	bool prefer_busy_poll;
 #endif
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
@@ -262,10 +268,10 @@ static u64 loop_check_gen = 0;
 static struct eventpoll *inserting_into;
 
 /* Slab cache used to allocate "struct epitem" */
-static struct kmem_cache *epi_cache __read_mostly;
+static struct kmem_cache *epi_cache __ro_after_init;
 
 /* Slab cache used to allocate "struct eppoll_entry" */
-static struct kmem_cache *pwq_cache __read_mostly;
+static struct kmem_cache *pwq_cache __ro_after_init;
 
 /*
  * List of files with newly added links, where we may need to limit the number
@@ -277,7 +283,7 @@ struct epitems_head {
 };
 static struct epitems_head *tfile_check_list = EP_UNACTIVE_PTR;
 
-static struct kmem_cache *ephead_cache __read_mostly;
+static struct kmem_cache *ephead_cache __ro_after_init;
 
 static inline void free_ephead(struct epitems_head *head)
 {
@@ -394,11 +400,30 @@ static inline int ep_events_available(struct eventpoll *ep)
 }
 
 #ifdef CONFIG_NET_RX_BUSY_POLL
+static bool busy_loop_ep_timeout(unsigned long start_time,
+				 struct eventpoll *ep)
+{
+	unsigned long bp_usec = READ_ONCE(ep->busy_poll_usecs);
+
+	if (bp_usec) {
+		unsigned long end_time = start_time + bp_usec;
+		unsigned long now = busy_loop_current_time();
+
+		return time_after(now, end_time);
+	}
+	return busy_loop_timeout(start_time);
+}
+
+static bool ep_busy_loop_on(struct eventpoll *ep)
+{
+	return !!READ_ONCE(ep->busy_poll_usecs) || net_busy_loop_on();
+}
+
 static bool ep_busy_loop_end(void *p, unsigned long start_time)
 {
 	struct eventpoll *ep = p;
 
-	return ep_events_available(ep) || busy_loop_timeout(start_time);
+	return ep_events_available(ep) || busy_loop_ep_timeout(start_time, ep);
 }
 
 /*
@@ -410,10 +435,15 @@ static bool ep_busy_loop_end(void *p, unsigned long start_time)
 static bool ep_busy_loop(struct eventpoll *ep, int nonblock)
 {
 	unsigned int napi_id = READ_ONCE(ep->napi_id);
+	u16 budget = READ_ONCE(ep->busy_poll_budget);
+	bool prefer_busy_poll = READ_ONCE(ep->prefer_busy_poll);
 
-	if ((napi_id >= MIN_NAPI_ID) && net_busy_loop_on()) {
-		napi_busy_loop(napi_id, nonblock ? NULL : ep_busy_loop_end, ep, false,
-			       BUSY_POLL_BUDGET);
+	if (!budget)
+		budget = BUSY_POLL_BUDGET;
+
+	if (napi_id >= MIN_NAPI_ID && ep_busy_loop_on(ep)) {
+		napi_busy_loop(napi_id, nonblock ? NULL : ep_busy_loop_end,
+			       ep, prefer_busy_poll, budget);
 		if (ep_events_available(ep))
 			return true;
 		/*
@@ -432,12 +462,12 @@ static bool ep_busy_loop(struct eventpoll *ep, int nonblock)
  */
 static inline void ep_set_busy_poll_napi_id(struct epitem *epi)
 {
-	struct eventpoll *ep;
+	struct eventpoll *ep = epi->ep;
 	unsigned int napi_id;
 	struct socket *sock;
 	struct sock *sk;
 
-	if (!net_busy_loop_on())
+	if (!ep_busy_loop_on(ep))
 		return;
 
 	sock = sock_from_file(epi->ffd.file);
@@ -449,7 +479,6 @@ static inline void ep_set_busy_poll_napi_id(struct epitem *epi)
 		return;
 
 	napi_id = READ_ONCE(sk->sk_napi_id);
-	ep = epi->ep;
 
 	/* Non-NAPI IDs can be rejected
 	 *	or
@@ -462,6 +491,49 @@ static inline void ep_set_busy_poll_napi_id(struct epitem *epi)
 	ep->napi_id = napi_id;
 }
 
+static long ep_eventpoll_bp_ioctl(struct file *file, unsigned int cmd,
+				  unsigned long arg)
+{
+	struct eventpoll *ep = file->private_data;
+	void __user *uarg = (void __user *)arg;
+	struct epoll_params epoll_params;
+
+	switch (cmd) {
+	case EPIOCSPARAMS:
+		if (copy_from_user(&epoll_params, uarg, sizeof(epoll_params)))
+			return -EFAULT;
+
+		/* pad byte must be zero */
+		if (epoll_params.__pad)
+			return -EINVAL;
+
+		if (epoll_params.busy_poll_usecs > S32_MAX)
+			return -EINVAL;
+
+		if (epoll_params.prefer_busy_poll > 1)
+			return -EINVAL;
+
+		if (epoll_params.busy_poll_budget > NAPI_POLL_WEIGHT &&
+		    !capable(CAP_NET_ADMIN))
+			return -EPERM;
+
+		WRITE_ONCE(ep->busy_poll_usecs, epoll_params.busy_poll_usecs);
+		WRITE_ONCE(ep->busy_poll_budget, epoll_params.busy_poll_budget);
+		WRITE_ONCE(ep->prefer_busy_poll, epoll_params.prefer_busy_poll);
+		return 0;
+	case EPIOCGPARAMS:
+		memset(&epoll_params, 0, sizeof(epoll_params));
+		epoll_params.busy_poll_usecs = READ_ONCE(ep->busy_poll_usecs);
+		epoll_params.busy_poll_budget = READ_ONCE(ep->busy_poll_budget);
+		epoll_params.prefer_busy_poll = READ_ONCE(ep->prefer_busy_poll);
+		if (copy_to_user(uarg, &epoll_params, sizeof(epoll_params)))
+			return -EFAULT;
+		return 0;
+	default:
+		return -ENOIOCTLCMD;
+	}
+}
+
 #else
 
 static inline bool ep_busy_loop(struct eventpoll *ep, int nonblock)
@@ -471,6 +543,12 @@ static inline bool ep_busy_loop(struct eventpoll *ep, int nonblock)
 
 static inline void ep_set_busy_poll_napi_id(struct epitem *epi)
 {
+}
+
+static long ep_eventpoll_bp_ioctl(struct file *file, unsigned int cmd,
+				  unsigned long arg)
+{
+	return -EOPNOTSUPP;
 }
 
 #endif /* CONFIG_NET_RX_BUSY_POLL */
@@ -685,12 +763,6 @@ static void ep_done_scan(struct eventpoll *ep,
 	spin_unlock_irq(&ep->lock);
 }
 
-static void epi_rcu_free(struct rcu_head *head)
-{
-	struct epitem *epi = container_of(head, struct epitem, rcu);
-	kmem_cache_free(epi_cache, epi);
-}
-
 static void ep_get(struct eventpoll *ep)
 {
 	refcount_inc(&ep->refcount);
@@ -792,7 +864,7 @@ static bool ep_remove_epi(struct eventpoll *ep, struct epitem *epi)
 	 * ep->mtx. The rcu read side, reverse_path_check_proc(), does not make
 	 * use of the rbn field.
 	 */
-	call_rcu(&epi->rcu, epi_rcu_free);
+	kfree_rcu(epi, rcu);
 
 	percpu_counter_dec(&ep->user->epoll_watches);
 	return true;
@@ -868,6 +940,27 @@ static void ep_clear_and_put(struct eventpoll *ep)
 	mutex_unlock(&ep->mtx);
 	if (ep_refcount_dec_and_test(ep))
 		ep_free(ep);
+}
+
+static long ep_eventpoll_ioctl(struct file *file, unsigned int cmd,
+			       unsigned long arg)
+{
+	int ret;
+
+	if (!is_file_epoll(file))
+		return -EINVAL;
+
+	switch (cmd) {
+	case EPIOCSPARAMS:
+	case EPIOCGPARAMS:
+		ret = ep_eventpoll_bp_ioctl(file, cmd, arg);
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
 }
 
 static int ep_eventpoll_release(struct inode *inode, struct file *file)
@@ -984,6 +1077,8 @@ static const struct file_operations eventpoll_fops = {
 	.release	= ep_eventpoll_release,
 	.poll		= ep_eventpoll_poll,
 	.llseek		= noop_llseek,
+	.unlocked_ioctl	= ep_eventpoll_ioctl,
+	.compat_ioctl	= compat_ptr_ioctl,
 };
 
 /*
@@ -1785,6 +1880,13 @@ static int ep_autoremove_wake_function(struct wait_queue_entry *wq_entry,
 	return ret;
 }
 
+static int ep_schedule_timeout(ktime_t *to)
+{
+	if (to)
+		return ktime_after(*to, ktime_get());
+	return 1;
+}
+
 /**
  * ep_poll - Retrieves ready events, and delivers them to the caller-supplied
  *           event buffer.
@@ -1882,7 +1984,7 @@ static int ep_poll(struct eventpoll *ep, struct epoll_event __user *events,
 		 * the same lock on wakeup ep_poll_callback() side, so it
 		 * is safe to avoid an explicit barrier.
 		 */
-		__set_current_state(TASK_INTERRUPTIBLE);
+		__set_current_state(TASK_INTERRUPTIBLE | TASK_FREEZABLE);
 
 		/*
 		 * Do the final check under the lock. ep_start/done_scan()
@@ -1898,8 +2000,9 @@ static int ep_poll(struct eventpoll *ep, struct epoll_event __user *events,
 		spin_unlock_irq(&ep->lock);
 
 		if (!eavail)
-			timed_out = !schedule_hrtimeout_range(to, slack,
-							      HRTIMER_MODE_ABS);
+			timed_out = !ep_schedule_timeout(to) ||
+				!schedule_hrtimeout_range(to, slack,
+							  HRTIMER_MODE_ABS);
 		__set_current_state(TASK_RUNNING);
 
 		/*
