@@ -1543,6 +1543,7 @@ struct pagemapread {
 #define PM_SOFT_DIRTY		BIT_ULL(55)
 #define PM_MMAP_EXCLUSIVE	BIT_ULL(56)
 #define PM_UFFD_WP		BIT_ULL(57)
+#define PM_GUARD_REGION		BIT_ULL(58)
 #define PM_FILE			BIT_ULL(61)
 #define PM_SWAP			BIT_ULL(62)
 #define PM_PRESENT		BIT_ULL(63)
@@ -1642,6 +1643,8 @@ static pagemap_entry_t pte_to_pagemap_entry(struct pagemapread *pm,
 			page = pfn_swap_entry_to_page(entry);
 		if (pte_marker_entry_uffd_wp(entry))
 			flags |= PM_UFFD_WP;
+		if (is_guard_swp_entry(entry))
+			flags |= PM_GUARD_REGION;
 	}
 
 	if (page && !PageAnon(page))

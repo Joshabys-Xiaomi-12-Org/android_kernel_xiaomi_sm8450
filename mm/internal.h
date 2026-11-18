@@ -1591,4 +1591,9 @@ static inline bool can_modify_vma_madv(struct vm_area_struct *vma, int behavior)
 }
 
 #endif
+struct mm_walk_ops;
+int walk_page_range_mm(struct mm_struct *mm, unsigned long start,
+		       unsigned long end, const struct mm_walk_ops *ops,
+		       void *private);
+
 #endif	/* __MM_INTERNAL_H */

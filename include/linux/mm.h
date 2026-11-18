@@ -2511,6 +2511,10 @@ struct page *vm_normal_page_pmd(struct vm_area_struct *vma, unsigned long addr,
 
 void zap_vma_ptes(struct vm_area_struct *vma, unsigned long address,
 		  unsigned long size);
+void zap_page_range_single_batched(struct mmu_gather *tlb,
+				   struct vm_area_struct *vma,
+				   unsigned long address, unsigned long size,
+				   struct zap_details *details);
 void zap_page_range_single(struct vm_area_struct *vma, unsigned long address,
 			   unsigned long size, struct zap_details *details);
 static inline void zap_vma_pages(struct vm_area_struct *vma)

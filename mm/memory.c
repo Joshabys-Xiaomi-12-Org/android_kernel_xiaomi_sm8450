@@ -1669,6 +1669,14 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 			if (!vma_is_anonymous(vma) &&
 			    !zap_drop_file_uffd_wp(details))
 				continue;
+		} else if (is_guard_swp_entry(entry)) {
+			/*
+			 * Ordinary zapping should not remove guard PTE
+			 * markers. Only do so if we should remove PTE markers
+			 * in general.
+			 */
+			if (!zap_drop_file_uffd_wp(details))
+				continue;
 		} else if (is_hwpoison_entry(entry) ||
 			   is_poisoned_swp_entry(entry)) {
 			if (!should_zap_cows(details))
@@ -1907,6 +1915,38 @@ void unmap_vmas(struct mmu_gather *tlb, struct ma_state *mas,
 	mmu_notifier_invalidate_range_end(&range);
 }
 
+void zap_page_range_single_batched(struct mmu_gather *tlb,
+		struct vm_area_struct *vma, unsigned long address,
+		unsigned long size, struct zap_details *details)
+{
+	const unsigned long end = address + size;
+	struct mmu_notifier_range range;
+
+	VM_WARN_ON_ONCE(!tlb || tlb->mm != vma->vm_mm);
+
+	lru_add_drain();
+	mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, vma->vm_mm,
+				address, end);
+	hugetlb_zap_begin(vma, &range.start, &range.end);
+	update_hiwater_rss(vma->vm_mm);
+	mmu_notifier_invalidate_range_start(&range);
+	/*
+	 * unmap 'address-end' not 'range.start-range.end' as range
+	 * could have been expanded for hugetlb pmd sharing.
+	 */
+	unmap_single_vma(tlb, vma, address, end, details, false);
+	mmu_notifier_invalidate_range_end(&range);
+	if (is_vm_hugetlb_page(vma)) {
+		/*
+		 * flush tlb and free resources before hugetlb_zap_end(), to
+		 * avoid concurrent page faults' allocation failure.
+		 */
+		tlb_finish_mmu(tlb);
+		hugetlb_zap_end(vma, details);
+		tlb_gather_mmu(tlb, vma->vm_mm);
+	}
+}
+
 /**
  * zap_page_range_single - remove user pages in a given range
  * @vma: vm_area_struct holding the applicable pages
@@ -1919,25 +1959,11 @@ void unmap_vmas(struct mmu_gather *tlb, struct ma_state *mas,
 void zap_page_range_single(struct vm_area_struct *vma, unsigned long address,
 		unsigned long size, struct zap_details *details)
 {
-	const unsigned long end = address + size;
-	struct mmu_notifier_range range;
 	struct mmu_gather tlb;
 
-	lru_add_drain();
-	mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, vma->vm_mm,
-				address, end);
-	hugetlb_zap_begin(vma, &range.start, &range.end);
 	tlb_gather_mmu(&tlb, vma->vm_mm);
-	update_hiwater_rss(vma->vm_mm);
-	mmu_notifier_invalidate_range_start(&range);
-	/*
-	 * unmap 'address-end' not 'range.start-range.end' as range
-	 * could have been expanded for hugetlb pmd sharing.
-	 */
-	unmap_single_vma(&tlb, vma, address, end, details, false);
-	mmu_notifier_invalidate_range_end(&range);
+	zap_page_range_single_batched(&tlb, vma, address, size, details);
 	tlb_finish_mmu(&tlb);
-	hugetlb_zap_end(vma, details);
 }
 
 /**
@@ -3954,6 +3980,10 @@ static vm_fault_t handle_pte_marker(struct vm_fault *vmf)
 	/* Higher priority than uffd-wp when data corrupted */
 	if (marker & PTE_MARKER_POISONED)
 		return VM_FAULT_HWPOISON;
+
+	/* Hitting a guard page is always a fatal condition. */
+	if (marker & PTE_MARKER_GUARD)
+		return VM_FAULT_SIGSEGV;
 
 	if (pte_marker_entry_uffd_wp(entry))
 		return pte_marker_handle_uffd_wp(vmf);
