@@ -751,8 +751,8 @@ skip_wait:
 		ww_mutex_lock_acquired(ww, ww_ctx);
 
 	raw_spin_unlock(&lock->wait_lock);
-	preempt_enable();
 	trace_android_vh_record_mutex_lock_starttime(lock, jiffies);
+	preempt_enable();
 	return 0;
 
 err:
@@ -975,9 +975,10 @@ static noinline void __sched __mutex_unlock_slowpath(struct mutex *lock, unsigne
 		__mutex_handoff(lock, next);
 
 	trace_android_vh_mutex_unlock_slowpath_bf_wakeq(lock);
+	preempt_disable();
 	raw_spin_unlock(&lock->wait_lock);
-
 	wake_up_q(&wake_q);
+	preempt_enable();
 	trace_android_vh_mutex_unlock_slowpath(lock);
 }
 
