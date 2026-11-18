@@ -10,7 +10,16 @@ SCHED_FEAT(PLACE_DEADLINE_INITIAL, true)
  * Preserve relative virtual deadline on 'migration'.
  */
 SCHED_FEAT(PLACE_REL_DEADLINE, true)
+/*
+ * Inhibit (wakeup) preemption until the current task has either matched the
+ * 0-lag point or until it has exhausted its slice.
+ */
 SCHED_FEAT(RUN_TO_PARITY, true)
+/*
+ * Allow wakeup of tasks with a shorter slice to cancel RUN_TO_PARITY for
+ * current.
+ */
+SCHED_FEAT(PREEMPT_SHORT, true)
 
 /*
  * Prefer to schedule the task we woke last (assuming it failed
@@ -18,6 +27,15 @@ SCHED_FEAT(RUN_TO_PARITY, true)
  * touched, increases cache locality.
  */
 SCHED_FEAT(NEXT_BUDDY, false)
+
+/*
+ * Allow completely ignoring cfs_rq->next; which can be set from various
+ * places:
+ *   - NEXT_BUDDY (wakeup preemption)
+ *   - yield_to_task()
+ *   - cgroup dequeue / pick
+ */
+SCHED_FEAT(PICK_BUDDY, true)
 
 /*
  * Consider buddies to be cache hot, decreases the likeliness of a
