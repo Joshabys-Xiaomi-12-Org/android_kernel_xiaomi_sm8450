@@ -15,9 +15,13 @@
 #ifndef _ZRAM_DRV_H_
 #define _ZRAM_DRV_H_
 
+#include <asm/byteorder.h>
 #include <linux/rwsem.h>
 #include <linux/zsmalloc.h>
-#include <linux/crypto.h>
+
+#if IS_ENABLED(CONFIG_ZRAM_ANDROID_IOCTL)
+#include <linux/xarray.h>
+#endif
 
 #include "zcomp.h"
 
@@ -27,7 +31,6 @@
 #define ZRAM_LOGICAL_BLOCK_SIZE	(1 << ZRAM_LOGICAL_BLOCK_SHIFT)
 #define ZRAM_SECTOR_PER_LOGICAL_BLOCK	\
 	(1 << (ZRAM_LOGICAL_BLOCK_SHIFT - SECTOR_SHIFT))
-
 
 /*
  * ZRAM is mainly used for memory efficiency so we want to keep memory
@@ -45,11 +48,10 @@
 
 /* Flags for zram pages (table[page_no].flags) */
 enum zram_pageflags {
-	/* zram slot is locked */
-	ZRAM_LOCK = ZRAM_FLAG_SHIFT,
-	ZRAM_SAME,	/* Page consists the same element */
+	ZRAM_SAME = ZRAM_FLAG_SHIFT,	/* Page consists the same element */
+	ZRAM_ENTRY_LOCK, /* entry access lock bit */
 	ZRAM_WB,	/* page is stored on backing_device */
-	ZRAM_UNDER_WB,	/* page is under writeback */
+	ZRAM_PP_SLOT,	/* Selected for post-processing */
 	ZRAM_HUGE,	/* Incompressible page */
 	ZRAM_IDLE,	/* not accessed page since last idle marking */
 	ZRAM_INCOMPRESSIBLE, /* none of the algorithms could compress it */
@@ -60,18 +62,37 @@ enum zram_pageflags {
 	__NR_ZRAM_PAGEFLAGS,
 };
 
-/*-- Data structures */
-
-/* Allocated for each disk page */
-struct zram_table_entry {
-	union {
-		unsigned long handle;
-		unsigned long element;
-	};
-	unsigned long flags;
-#ifdef CONFIG_ZRAM_TRACK_ENTRY_ACTIME
-	ktime_t ac_time;
+/*
+ * The slot lock is a bit-wait lock on the whole __lock word, while
+ * flags and ac_time alias that word as two u32s.  The lock bit must
+ * land in the slot that ZRAM_ENTRY_LOCK reserves in attr.flags; on
+ * 64-bit big-endian the flags word maps to the upper half of __lock,
+ * so the bit position has to be shifted up.
+ */
+#if defined(CONFIG_64BIT) && defined(__BIG_ENDIAN)
+#define ZRAM_ENTRY_LOCK_BIT  (ZRAM_ENTRY_LOCK + 32)
+#else
+#define ZRAM_ENTRY_LOCK_BIT  ZRAM_ENTRY_LOCK
 #endif
+
+/*
+ * Allocated for each disk page.  We use bit-lock (ZRAM_ENTRY_LOCK bit
+ * of flags) to save memory.  There can be plenty of entries and standard
+ * locking primitives (e.g. mutex) will significantly increase sizeof()
+ * of each entry and hence of the meta table.
+ */
+struct zram_table_entry {
+	unsigned long handle;
+	union {
+		unsigned long __lock;
+		struct attr {
+			u32 flags;
+#ifdef CONFIG_ZRAM_TRACK_ENTRY_ACTIME
+			u32 ac_time;
+#endif
+		} attr;
+	};
+	struct lockdep_map dep_map;
 };
 
 struct zram_stats {
@@ -84,7 +105,6 @@ struct zram_stats {
 	atomic64_t huge_pages_since;	/* no. of huge pages since zram set up */
 	atomic64_t pages_stored;	/* no. of pages currently stored */
 	atomic_long_t max_used_pages;	/* no. of maximum pages stored */
-	atomic64_t writestall;		/* no. of write slow paths */
 	atomic64_t miss_free;		/* no. of missed free */
 #ifdef	CONFIG_ZRAM_WRITEBACK
 	atomic64_t bd_count;		/* no. of pages in backing device */
@@ -107,6 +127,7 @@ struct zram {
 	struct zram_table_entry *table;
 	struct zs_pool *mem_pool;
 	struct zcomp *comps[ZRAM_MAX_COMPS];
+	struct zcomp_params params[ZRAM_MAX_COMPS];
 	struct gendisk *disk;
 	/* Prevent concurrent execution of device init */
 	struct rw_semaphore init_lock;
@@ -129,15 +150,99 @@ struct zram {
 	bool claim; /* Protected by disk->open_mutex */
 #ifdef CONFIG_ZRAM_WRITEBACK
 	struct file *backing_dev;
-	spinlock_t wb_limit_lock;
 	bool wb_limit_enable;
+	bool compressed_wb;
+	u32 wb_batch_size;
 	u64 bd_wb_limit;
 	struct block_device *bdev;
 	unsigned long *bitmap;
 	unsigned long nr_pages;
 #endif
+#if IS_ENABLED(CONFIG_ZRAM_ANDROID_IOCTL)
+	struct xarray prefetch_cache;
+#endif
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
 #endif
+	atomic_t pp_in_progress;
 };
+
+bool init_done(struct zram *zram);
+
+#if defined CONFIG_ZRAM_WRITEBACK || defined CONFIG_ZRAM_MULTI_COMP
+
+/*
+ * A post-processing bucket is, essentially, a size class, this defines
+ * the range (in bytes) of pp-slots sizes in particular bucket.
+ */
+#define PP_BUCKET_SIZE_RANGE	64
+#define NUM_PP_BUCKETS		((PAGE_SIZE / PP_BUCKET_SIZE_RANGE) + 1)
+
+struct zram_pp_ctl {
+	struct list_head	pp_buckets[NUM_PP_BUCKETS];
+};
+
+struct zram_pp_ctl *init_pp_ctl(void);
+void release_pp_ctl(struct zram *zram, struct zram_pp_ctl *ctl);
+#endif
+
+#ifdef CONFIG_ZRAM_WRITEBACK
+struct zram_wb_ctl {
+	/* idle list is accessed only by the writeback task, no concurency */
+	struct list_head idle_reqs;
+	/* done list is accessed concurrently, protect by done_lock */
+	struct list_head done_reqs;
+	wait_queue_head_t done_wait;
+	spinlock_t done_lock;
+	atomic_t num_inflight;
+	struct rcu_head rcu;
+	u64 processed_bytes;
+};
+
+struct zram_wb_ctl *init_wb_ctl(struct zram *zram);
+void release_wb_ctl(struct zram_wb_ctl *wb_ctl);
+int scan_slots_for_writeback(struct zram *zram, u32 mode,
+			     unsigned long lo, unsigned long hi,
+			     struct zram_pp_ctl *ctl);
+int zram_writeback_slots(struct zram *zram,
+			 struct zram_pp_ctl *ctl,
+			 struct zram_wb_ctl *wb_ctl);
+int scan_slot_for_prefetch(struct zram *zram, unsigned long index,
+			   struct zram_pp_ctl *ctl);
+int zram_prefetch_slots(struct zram *zram, struct zram_pp_ctl *ctl);
+#endif
+
+#if IS_ENABLED(CONFIG_ZRAM_ANDROID_IOCTL)
+void zram_prefetch_cache_init(struct zram *zram);
+void zram_prefetch_cache_destroy(struct zram *zram);
+bool zram_prefetch_cache_exist(struct zram *zram, u32 index);
+int zram_prefetch_cache_store(struct zram *zram, u32 index,
+			      unsigned long blk_idx);
+int zram_prefetch_cache_reuse(struct zram *zram, u32 index);
+int zram_prefetch_cache_drop(struct zram *zram, u32 index);
+#else
+static inline void zram_prefetch_cache_init(struct zram *zram) {};
+static inline void zram_prefetch_cache_destroy(struct zram *zram) {};
+static inline bool zram_prefetch_cache_exist(struct zram *zram, u32 index)
+{
+	return false;
+}
+
+static inline int zram_prefetch_cache_store(struct zram *zram, u32 index,
+					    unsigned long blk_idx)
+{
+	return 0; /* unsupported */
+}
+
+static inline int zram_prefetch_cache_reuse(struct zram *zram, u32 index)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int zram_prefetch_cache_drop(struct zram *zram, u32 index)
+{
+	return -EOPNOTSUPP;
+}
+#endif
+
 #endif
