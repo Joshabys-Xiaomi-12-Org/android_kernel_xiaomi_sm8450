@@ -154,8 +154,9 @@ struct sched_domain {
 
 	unsigned int span_weight;
 
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_USE2(1, unsigned int newidle_call,
+			  unsigned int newidle_success);
+	ANDROID_KABI_USE(2, unsigned int newidle_ratio);
 
 	/*
 	 * Span of all CPUs in this domain.
