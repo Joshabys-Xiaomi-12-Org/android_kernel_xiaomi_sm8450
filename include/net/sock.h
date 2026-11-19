@@ -2631,6 +2631,12 @@ static inline void sk_clear_bit(int nr, struct sock *sk)
 	clear_bit(nr, &sk->sk_wq_raw->flags);
 }
 
+static inline void sk_wake_async_rcu(const struct sock *sk, int how, int band)
+{
+	if (sock_flag(sk, SOCK_FASYNC))
+		sock_wake_async(rcu_dereference(sk->sk_wq), how, band);
+}
+
 static inline void sk_wake_async(const struct sock *sk, int how, int band)
 {
 	if (sock_flag(sk, SOCK_FASYNC)) {
