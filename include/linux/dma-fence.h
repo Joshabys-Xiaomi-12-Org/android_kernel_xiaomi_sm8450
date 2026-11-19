@@ -401,6 +401,9 @@ bool dma_fence_remove_callback(struct dma_fence *fence,
 			       struct dma_fence_cb *cb);
 void dma_fence_enable_sw_signaling(struct dma_fence *fence);
 
+const char __rcu *dma_fence_driver_name(struct dma_fence *fence);
+const char __rcu *dma_fence_timeline_name(struct dma_fence *fence);
+
 /**
  * dma_fence_is_signaled_locked - Return an indication if the fence
  *                                is signaled yet.
