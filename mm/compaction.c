@@ -23,6 +23,7 @@
 #include <linux/freezer.h>
 #include <linux/page_owner.h>
 #include <linux/psi.h>
+#include <linux/cpuset.h>
 #include "internal.h"
 
 #ifdef CONFIG_COMPACTION
@@ -633,7 +634,8 @@ static unsigned long isolate_freepages_block(struct compact_control *cc,
 		if (PageCompound(page)) {
 			const unsigned int order = compound_order(page);
 
-			if (likely(order <= MAX_ORDER)) {
+			if ((order <= MAX_ORDER) &&
+			    (blockpfn + (1UL << order) <= end_pfn)) {
 				blockpfn += (1UL << order) - 1;
 				page += (1UL << order) - 1;
 				nr_scanned += (1UL << order) - 1;
@@ -1387,12 +1389,14 @@ static bool suitable_migration_target(struct compact_control_ext *cc_ext,
 
 	/* If the page is a large free page, then disallow migration */
 	if (PageBuddy(page)) {
+		int order = cc->order > 0 ? cc->order : pageblock_order;
+
 		/*
 		 * We are checking page_order without zone->lock taken. But
 		 * the only small danger is that we skip a potentially suitable
 		 * pageblock, so it's not worth to check order for valid range.
 		 */
-		if (buddy_order_unsafe(page) >= pageblock_order)
+		if (buddy_order_unsafe(page) >= order)
 			return false;
 	}
 
@@ -1518,8 +1522,9 @@ static int next_search_order(struct compact_control *cc, int order)
 	return order;
 }
 
-static void fast_isolate_freepages(struct compact_control *cc)
+static void fast_isolate_freepages(struct compact_control_ext *cc_ext)
 {
+	struct compact_control *cc = cc_ext->cc;
 	unsigned int limit = max(1U, freelist_scan_limit(cc) >> 1);
 	unsigned int nr_scanned = 0, total_isolated = 0;
 	unsigned long low_pfn, min_pfn, highest = 0;
@@ -1665,6 +1670,9 @@ static void fast_isolate_freepages(struct compact_control *cc)
 						min(pageblock_end_pfn(min_pfn),
 						    zone_end_pfn(cc->zone)),
 						cc->zone);
+					if (page && !suitable_migration_target(cc_ext, page))
+						page = NULL;
+
 					cc->free_pfn = min_pfn;
 				}
 			}
@@ -1701,7 +1709,7 @@ static void isolate_freepages(struct compact_control_ext *cc_ext)
 	unsigned int stride;
 
 	/* Try a small search of the free lists for a candidate */
-	fast_isolate_freepages(cc);
+	fast_isolate_freepages(cc_ext);
 	if (cc->nr_freepages)
 		goto splitmap;
 
@@ -2778,6 +2786,11 @@ enum compact_result try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 		enum compact_result status;
 
 		if (!zone_can_frag(zone))
+			continue;
+
+		if (cpusets_enabled() &&
+		    (alloc_flags & ALLOC_CPUSET) &&
+		    !__cpuset_zone_allowed(zone, gfp_mask))
 			continue;
 
 		if (prio > MIN_COMPACT_PRIORITY
