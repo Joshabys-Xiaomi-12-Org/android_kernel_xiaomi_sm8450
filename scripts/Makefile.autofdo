@@ -21,12 +21,15 @@ ifneq ($(CLANG_AUTOFDO_PROFILE),)
   CFLAGS_AUTOFDO_CLANG += $(call cc-option,-fsplit-machine-functions)
 endif
 
-ifdef CONFIG_LTO_CLANG_THIN
+ifdef CONFIG_LTO_CLANG
   ifneq ($(CLANG_AUTOFDO_PROFILE),)
     KBUILD_LDFLAGS += --lto-sample-profile=$(CLANG_AUTOFDO_PROFILE)
-    KBUILD_LDFLAGS += -plugin-opt=-split-machine-functions
+    KBUILD_LDFLAGS += --mllvm=-split-machine-functions
   endif
-  KBUILD_LDFLAGS += --mllvm=-enable-fs-discriminator=true --mllvm=-improved-fs-discriminator=true -plugin-opt=thinlto
+  KBUILD_LDFLAGS += --mllvm=-enable-fs-discriminator=true --mllvm=-improved-fs-discriminator=true
+  ifdef CONFIG_LTO_CLANG_THIN
+    KBUILD_LDFLAGS += -plugin-opt=thinlto
+  endif
 endif
 
 export CFLAGS_AUTOFDO_CLANG
