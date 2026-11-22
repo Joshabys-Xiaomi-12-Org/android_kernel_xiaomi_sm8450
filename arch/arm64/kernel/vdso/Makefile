@@ -54,7 +54,6 @@ endif
 
 # Disable gcov profiling for VDSO code
 GCOV_PROFILE := n
-AUTOFDO_PROFILE := n
 
 targets += vdso.lds
 CPPFLAGS_vdso.lds += -P -C -U$(ARCH)

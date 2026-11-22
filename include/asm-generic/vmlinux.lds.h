@@ -545,21 +545,6 @@
 		__cpuidle_text_end = .;					\
 		__noinstr_text_end = .;
 
-#define TEXT_SPLIT							\
-		__split_text_start = .;					\
-		*(.text.split .text.split.[0-9a-zA-Z_]*)		\
-		__split_text_end = .;
-
-#define TEXT_UNLIKELY							\
-		__unlikely_text_start = .;				\
-		*(.text.unlikely .text.unlikely.*)			\
-		__unlikely_text_end = .;
-
-#define TEXT_HOT							\
-		__hot_text_start = .;					\
-		*(.text.hot .text.hot.*)				\
-		__hot_text_end = .;
-
 /*
  * .text section. Map to function alignment to avoid address changes
  * during second ld run in second ld pass when generating System.map
@@ -570,15 +555,13 @@
  */
 #define TEXT_TEXT							\
 		ALIGN_FUNCTION();					\
-		*(.text.asan.* .text.tsan.*)				\
-		*(.text.unknown .text.unknown.*)			\
-		TEXT_SPLIT						\
-		TEXT_UNLIKELY						\
-		. = ALIGN(PAGE_SIZE);					\
-		TEXT_HOT						\
+		*(.text.hot .text.hot.*)				\
 		*(TEXT_MAIN .text.fixup)				\
+		*(.text.unlikely .text.unlikely.*)			\
+		*(.text.unknown .text.unknown.*)			\
 		NOINSTR_TEXT						\
-		*(.ref.text)
+		*(.ref.text)						\
+		*(.text.asan.* .text.tsan.*)
 
 
 /* sched.text is aling to function alignment to secure we have same

@@ -8,28 +8,15 @@ ifndef CONFIG_DEBUG_INFO
   CFLAGS_AUTOFDO_CLANG += -gmlt
 endif
 
-ifeq ($(origin CLANG_AUTOFDO_PROFILE), undefined)
-  ifeq ($(ARCH),arm64)
-    ifneq ($(wildcard $(srctree)/gki/aarch64/afdo/kernel.afdo),)
-      CLANG_AUTOFDO_PROFILE := $(abspath $(srctree)/gki/aarch64/afdo/kernel.afdo)
-    endif
-  endif
+ifdef CLANG_AUTOFDO_PROFILE
+  CFLAGS_AUTOFDO_CLANG += -fprofile-sample-use=$(CLANG_AUTOFDO_PROFILE)
 endif
 
-ifneq ($(CLANG_AUTOFDO_PROFILE),)
-  CFLAGS_AUTOFDO_CLANG += -fprofile-sample-use=$(CLANG_AUTOFDO_PROFILE) -ffunction-sections
-  CFLAGS_AUTOFDO_CLANG += $(call cc-option,-fsplit-machine-functions)
-endif
-
-ifdef CONFIG_LTO_CLANG
-  ifneq ($(CLANG_AUTOFDO_PROFILE),)
+ifdef CONFIG_LTO_CLANG_THIN
+  ifdef CLANG_AUTOFDO_PROFILE
     KBUILD_LDFLAGS += --lto-sample-profile=$(CLANG_AUTOFDO_PROFILE)
-    KBUILD_LDFLAGS += --mllvm=-split-machine-functions
   endif
-  KBUILD_LDFLAGS += --mllvm=-enable-fs-discriminator=true --mllvm=-improved-fs-discriminator=true
-  ifdef CONFIG_LTO_CLANG_THIN
-    KBUILD_LDFLAGS += -plugin-opt=thinlto
-  endif
+  KBUILD_LDFLAGS += --mllvm=-enable-fs-discriminator=true --mllvm=-improved-fs-discriminator=true -plugin-opt=thinlto
 endif
 
 export CFLAGS_AUTOFDO_CLANG
