@@ -185,9 +185,8 @@ static struct device_node *of_thermal_zone_find(struct device_node *sensor, int 
 		count = of_count_phandle_with_args(child, "thermal-sensors",
 						   "#thermal-sensor-cells");
 		if (count <= 0) {
-			pr_err("%pOFn: missing thermal sensor\n", child);
-			tz = ERR_PTR(-EINVAL);
-			goto out;
+			pr_debug("%pOFn: missing thermal sensor, skipping\n", child);
+			continue;
 		}
 
 		for (i = 0; i < count; i++) {
