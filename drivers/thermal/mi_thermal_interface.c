@@ -244,6 +244,8 @@ static ssize_t thermal_temp_state_store(struct device *dev,
 	val = simple_strtol(buf, NULL, 10);
 
 	atomic_set(&temp_state, val);
+	if (mi_thermal_dev.dev)
+		sysfs_notify(&mi_thermal_dev.dev->kobj, NULL, "temp_state");
 
 	return len;
 }
@@ -299,6 +301,8 @@ static ssize_t thermal_sconfig_store(struct device *dev,
 	val = simple_strtol(buf, NULL, 10);
 
 	atomic_set(&switch_mode, val);
+	if (mi_thermal_dev.dev)
+		sysfs_notify(&mi_thermal_dev.dev->kobj, NULL, "sconfig");
 
 	return len;
 }
@@ -315,6 +319,8 @@ static ssize_t thermal_boost_store(struct device *dev,
 {
 	int ret;
 	ret = snprintf(boost_buf, BOOST_BUFFER_SIZE, buf);
+	if (mi_thermal_dev.dev)
+		sysfs_notify(&mi_thermal_dev.dev->kobj, NULL, "boost");
 	return len;
 }
 
@@ -334,6 +340,8 @@ static ssize_t thermal_balance_mode_store(struct device *dev,
 	val = simple_strtol(buf, NULL, 10);
 
 	atomic_set(&balance_mode, val);
+	if (mi_thermal_dev.dev)
+		sysfs_notify(&mi_thermal_dev.dev->kobj, NULL, "balance_mode");
 
 	return len;
 }
@@ -702,6 +710,8 @@ static ssize_t thermal_charger_temp_store(struct device *dev,
 	val = simple_strtol(buf, NULL, 10);
 
 	atomic_set(&charger_mode, val);
+	if (mi_thermal_dev.dev)
+		sysfs_notify(&mi_thermal_dev.dev->kobj, NULL, "charger_temp");
 
 	return len;
 }

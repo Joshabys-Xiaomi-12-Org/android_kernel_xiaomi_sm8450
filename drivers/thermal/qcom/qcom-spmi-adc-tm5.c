@@ -194,6 +194,7 @@ struct adc_tm5_data {
  */
 struct adc_tm5_channel {
 	unsigned int		channel;
+	unsigned int		sensor_id;
 	unsigned int		adc_channel;
 	enum adc_tm5_cal_method	cal_method;
 	unsigned int		prescale;
@@ -687,24 +688,26 @@ static int adc_tm5_register_tzd(struct adc_tm5_chip *adc_tm, bool set_trips)
 		adc_tm->channels[i].chip = adc_tm;
 		if (set_trips)
 			tzd = devm_thermal_of_zone_register(adc_tm->dev,
-						   adc_tm->channels[i].channel,
+						   adc_tm->channels[i].sensor_id,
 						   &adc_tm->channels[i],
 						   &adc_tm5_thermal_ops);
 		else
 			tzd = devm_thermal_of_zone_register(adc_tm->dev,
-						   adc_tm->channels[i].channel,
+						   adc_tm->channels[i].sensor_id,
 						   &adc_tm->channels[i],
 						   &adc_tm5_thermal_iio_ops);
 
 		if (IS_ERR(tzd)) {
 			if (PTR_ERR(tzd) == -ENODEV) {
-				dev_dbg(adc_tm->dev, "thermal sensor on channel %d is not used\n",
-					 adc_tm->channels[i].channel);
+				dev_dbg(adc_tm->dev, "thermal sensor on channel %d (id 0x%x) is not used\n",
+					 adc_tm->channels[i].channel,
+					 adc_tm->channels[i].sensor_id);
 				continue;
 			}
 
-			dev_err(adc_tm->dev, "Error registering TZ zone for channel %d: %ld\n",
-				adc_tm->channels[i].channel, PTR_ERR(tzd));
+			dev_err(adc_tm->dev, "Error registering TZ zone for channel %d (id 0x%x): %ld\n",
+				adc_tm->channels[i].channel,
+				adc_tm->channels[i].sensor_id, PTR_ERR(tzd));
 			return PTR_ERR(tzd);
 		}
 		adc_tm->channels[i].tzd = tzd;
@@ -813,9 +816,19 @@ static int adc_tm5_get_dt_channel_data(struct adc_tm5_chip *adc_tm,
 		return ret;
 	}
 
+	channel->sensor_id = chan;
 	if (chan >= ADC_TM5_NUM_CHANNELS) {
-		dev_err(dev, "%s: channel number too big: %d\n", name, chan);
-		return -EINVAL;
+		/*
+		 * Legacy Qualcomm 5.10 DTs encode (SID << 8) | adc_channel in
+		 * reg and reference that same ID in thermal-zones'
+		 * thermal-sensors. Map it to a sequential BTM hardware channel
+		 * index (0..7) while preserving sensor_id for zone registration.
+		 */
+		chan = channel - adc_tm->channels;
+		if (chan >= ADC_TM5_NUM_CHANNELS) {
+			dev_err(dev, "%s: channel number too big: %d\n", name, chan);
+			return -EINVAL;
+		}
 	}
 
 	channel->channel = chan;
