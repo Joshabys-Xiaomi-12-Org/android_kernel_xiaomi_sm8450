@@ -232,6 +232,7 @@ struct adc_tm5_chip {
 	struct device		*dev;
 	const struct adc_tm5_data	*data;
 	struct adc_tm5_channel	*channels;
+	struct iio_channel	*parent_iio;
 	unsigned int		nchannels;
 	unsigned int		decimation;
 	unsigned int		avg_samples;
@@ -839,34 +840,82 @@ static int adc_tm5_get_dt_channel_data(struct adc_tm5_chip *adc_tm,
 	 * #io-channel-cells, just enforce cell_count = 1.
 	 */
 	ret = of_parse_phandle_with_fixed_args(node, "io-channels", 1, 0, &args);
-	if (ret < 0) {
-		dev_err(dev, "%s: error parsing ADC channel number %d: %d\n", name, chan, ret);
-		return ret;
-	}
-	of_node_put(args.np);
+	if (ret == -ENOENT && of_property_present(dev->of_node, "io-channels")) {
+		int idx = 0;
 
-	if (args.args_count != 1) {
-		dev_err(dev, "%s: invalid args count for ADC channel %d\n", name, chan);
-		return -EINVAL;
-	}
+		if (!adc_tm->parent_iio) {
+			adc_tm->parent_iio = devm_iio_channel_get_all(dev);
+			if (IS_ERR(adc_tm->parent_iio)) {
+				ret = PTR_ERR(adc_tm->parent_iio);
+				adc_tm->parent_iio = NULL;
+				if (ret != -EPROBE_DEFER)
+					dev_err(dev, "%s: error getting parent iio channels: %d\n",
+						name, ret);
+				return ret;
+			}
+		}
 
-	adc_channel = args.args[0];
-	if (adc_tm->data->gen == ADC_TM5_GEN2)
-		adc_channel &= 0xff;
+		channel->iio = NULL;
+		while (adc_tm->parent_iio[idx].indio_dev) {
+			ret = of_parse_phandle_with_fixed_args(dev->of_node,
+							       "io-channels",
+							       1, idx, &args);
+			if (ret < 0)
+				break;
+			of_node_put(args.np);
+			if (args.args_count == 1 &&
+			    args.args[0] == channel->sensor_id) {
+				channel->iio = &adc_tm->parent_iio[idx];
+				break;
+			}
+			idx++;
+		}
 
-	if (adc_channel >= ADC5_MAX_CHANNEL) {
-		dev_err(dev, "%s: invalid ADC channel number %d\n", name, chan);
-		return -EINVAL;
-	}
-	channel->adc_channel = args.args[0];
+		if (!channel->iio) {
+			dev_err(dev, "%s: no matching parent io-channel for 0x%x\n",
+				name, channel->sensor_id);
+			return -ENOENT;
+		}
 
-	channel->iio = devm_fwnode_iio_channel_get_by_name(adc_tm->dev,
-							   of_fwnode_handle(node), NULL);
-	if (IS_ERR(channel->iio)) {
-		ret = PTR_ERR(channel->iio);
-		if (ret != -EPROBE_DEFER)
-			dev_err(dev, "%s: error getting channel: %d\n", name, ret);
-		return ret;
+		adc_channel = channel->sensor_id;
+		if (adc_tm->data->gen == ADC_TM5_GEN2)
+			adc_channel &= 0xff;
+
+		if (adc_channel >= ADC5_MAX_CHANNEL) {
+			dev_err(dev, "%s: invalid ADC channel number %d\n", name, chan);
+			return -EINVAL;
+		}
+		channel->adc_channel = channel->sensor_id;
+	} else {
+		if (ret < 0) {
+			dev_err(dev, "%s: error parsing ADC channel number %d: %d\n", name, chan, ret);
+			return ret;
+		}
+		of_node_put(args.np);
+
+		if (args.args_count != 1) {
+			dev_err(dev, "%s: invalid args count for ADC channel %d\n", name, chan);
+			return -EINVAL;
+		}
+
+		adc_channel = args.args[0];
+		if (adc_tm->data->gen == ADC_TM5_GEN2)
+			adc_channel &= 0xff;
+
+		if (adc_channel >= ADC5_MAX_CHANNEL) {
+			dev_err(dev, "%s: invalid ADC channel number %d\n", name, chan);
+			return -EINVAL;
+		}
+		channel->adc_channel = args.args[0];
+
+		channel->iio = devm_fwnode_iio_channel_get_by_name(adc_tm->dev,
+								   of_fwnode_handle(node), NULL);
+		if (IS_ERR(channel->iio)) {
+			ret = PTR_ERR(channel->iio);
+			if (ret != -EPROBE_DEFER)
+				dev_err(dev, "%s: error getting channel: %d\n", name, ret);
+			return ret;
+		}
 	}
 
 	ret = of_property_read_u32_array(node, "qcom,pre-scaling", varr, 2);
@@ -884,6 +933,8 @@ static int adc_tm5_get_dt_channel_data(struct adc_tm5_chip *adc_tm,
 	}
 
 	ret = of_property_read_u32(node, "qcom,hw-settle-time-us", &value);
+	if (ret)
+		ret = of_property_read_u32(node, "qcom,hw-settle-time", &value);
 	if (!ret) {
 		ret = qcom_adc5_hw_settle_time_from_dt(value, adc_tm->data->hw_settle);
 		if (ret < 0) {
