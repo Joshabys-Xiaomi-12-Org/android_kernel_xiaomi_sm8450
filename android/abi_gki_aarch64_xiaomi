@@ -434,6 +434,8 @@
   nvmem_register
   of_node_name_prefix
   nvmem_unregister
+  bdev_open_by_path
+  bdev_release
   blkdev_put
   blkdev_get_by_path
   generic_shutdown_super
